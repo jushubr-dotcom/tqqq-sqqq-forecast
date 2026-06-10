@@ -24,6 +24,7 @@ OUTPUT_DIR = "outputs"
 BACKTEST_OUTPUT_PATH = os.path.join(OUTPUT_DIR, "backtest_results.csv")
 PRODUCTION_OUTPUT_PATH = os.path.join(OUTPUT_DIR, "production_forecast.csv")
 
+SMOKE_TEST = os.getenv("SMOKE_TEST", "false").lower() == "true"
 
 def ensure_output_dir():
     os.makedirs(OUTPUT_DIR, exist_ok=True)
@@ -40,7 +41,7 @@ def download_data(symbols):
     - Volume
     """
 
-    print("Downloading data from Yahoo Finance...")
+    print("Downloading data from Yahoo Finance...", flush=True)
 
     raw = yf.download(
         tickers=symbols,
@@ -72,7 +73,7 @@ def download_data(symbols):
     data["date"] = pd.to_datetime(data["date"]).dt.date
     data = data.sort_values(["symbol", "date"]).reset_index(drop=True)
 
-    print(f"Downloaded {len(data):,} rows.")
+    print(f"Downloaded {len(data):,} rows.", flush=True)
 
     return data
 
@@ -83,7 +84,7 @@ def clean_data(data):
     Removes bad rows, missing prices, and impossible values.
     """
 
-    print("Cleaning data...")
+    print("Cleaning data...", flush=True)
 
     data = data.copy()
 
@@ -102,7 +103,7 @@ def clean_data(data):
     data = data.drop_duplicates(subset=["symbol", "date"])
     data = data.sort_values(["symbol", "date"]).reset_index(drop=True)
 
-    print(f"Cleaned data has {len(data):,} rows.")
+    print(f"Cleaned data has {len(data):,} rows.", flush=True)
 
     return data
 
@@ -118,7 +119,7 @@ def add_cross_symbol_features(data):
         other_symbol_close = TQQQ close
     """
 
-    print("Adding cross-symbol features...")
+    print("Adding cross-symbol features...", flush=True)
 
     wide_close = data.pivot(index="date", columns="symbol", values="close").reset_index()
 
@@ -144,7 +145,7 @@ def create_features(data):
     Creates lag features, moving averages, and future target columns.
     """
 
-    print("Creating features...")
+    print("Creating features...", flush=True)
 
     data = data.copy()
     data = data.sort_values(["symbol", "date"]).reset_index(drop=True)
@@ -246,8 +247,9 @@ def train_models(train_df, feature_cols, horizon):
     y_loss = train_df[target_loss_col]
 
     price_model = RandomForestRegressor(
-        n_estimators=300,
-        min_samples_leaf=10,
+        n_estimators=10 if SMOKE_TEST else 50,
+        max_depth=4 if SMOKE_TEST else 6,
+        min_samples_leaf=20,
         random_state=42,
         n_jobs=-1,
     )
@@ -255,8 +257,9 @@ def train_models(train_df, feature_cols, horizon):
     price_model.fit(X_train, y_price)
 
     loss_model = RandomForestClassifier(
-        n_estimators=300,
-        min_samples_leaf=10,
+        n_estimators=10 if SMOKE_TEST else 50,
+        max_depth=4 if SMOKE_TEST else 6,
+        min_samples_leaf=20,
         random_state=42,
         n_jobs=-1,
         class_weight="balanced",
@@ -319,6 +322,7 @@ def run_backtest(features):
     feature_cols = get_feature_columns(features)
 
     for symbol in SYMBOLS:
+        print(f"Backtesting symbol: {symbol}", flush=True)
         symbol_df = features[features["symbol"] == symbol].copy()
         symbol_df = symbol_df.sort_values("date").reset_index(drop=True)
 
@@ -327,7 +331,12 @@ def run_backtest(features):
             & (symbol_df["date"] <= backtest_end)
         ]["date"].unique()
 
+        if SMOKE_TEST:
+            print("SMOKE_TEST enabled: only testing first 3 dates per symbol.", flush=True)
+            test_dates = test_dates[:3]
+
         for test_date in test_dates:
+            print(f"  Testing date: {test_date}", flush=True)
             test_date = pd.to_datetime(test_date)
 
             training_end_date = test_date - timedelta(days=1)
