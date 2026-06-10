@@ -17,6 +17,8 @@ warnings.filterwarnings("ignore")
 # CONFIG
 # ============================================================
 
+RUN_TIMESTAMP = datetime.utcnow().strftime("%Y-%m-%d_%H-%M-%S")
+
 SYMBOLS = ["TQQQ", "SQQQ"]
 HORIZONS = [5, 7, 14, 28]
 LAG_DAYS = list(range(1, 53))
@@ -563,6 +565,7 @@ def run_backtest(features, model_params, output_path):
                 continue
 
             output_row = {
+                "run_timestamp": RUN_TIMESTAMP,
                 "backtest_name": model_params["backtest_name"],
                 "n_estimators": model_params["n_estimators"],
                 "max_depth": model_params["max_depth"],
@@ -737,10 +740,6 @@ def run_backtest_grid(features):
     Runs the backtest once per hyperparameter combination.
     Appends each individual result row to the CSV as it goes.
     """
-
-    if os.path.exists(BACKTEST_OUTPUT_PATH):
-        os.remove(BACKTEST_OUTPUT_PATH)
-        print(f"Removed old file: {BACKTEST_OUTPUT_PATH}", flush=True)
 
     parameter_grid = PARAMETER_GRID
 
