@@ -34,9 +34,10 @@ jobs:
         env:
           PYTHONUNBUFFERED: "1"
           SMOKE_TEST: "true"
+          SMOKE_TEST_DAYS_PER_SYMBOL: "10"
+          SMOKE_TEST_PARAMETER_COUNT: "2"
         run: |
           python -u src/forecast_pipeline.py
-
       - name: Commit updated forecast outputs
         run: |
           git config --global user.name "github-actions-bot"
