@@ -39,8 +39,8 @@ jobs:
         run: |
           git config --global user.name "github-actions-bot"
           git config --global user.email "github-actions-bot@users.noreply.github.com"
-
+      
           git add outputs/backtest_results.csv outputs/production_forecast.csv
-
-          git commit -m "Update daily TQQQ SQQQ forecasts" || echo "No changes to commit"
+      
+          git commit -m "Append forecast outputs" || echo "No changes to commit"
           git push
