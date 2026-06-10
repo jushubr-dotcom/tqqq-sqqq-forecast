@@ -632,16 +632,82 @@ def run_backtest(features, model_params, output_path):
             output_row["test_end_date"] = max_test_end_date
 
             required_prediction_cols = [f"{h}d_prediction" for h in HORIZONS]
-
+            required_residual_cols = [f"{h}d_actual_minus_prediction" for h in HORIZONS]
+            required_too_high_cols = [f"{h}d_prediction_too_high" for h in HORIZONS]
+            
             if all(col in output_row for col in required_prediction_cols):
+                # ------------------------------------------------------------
+                # Row-level summary metrics across 5d, 7d, 14d, and 28d
+                # ------------------------------------------------------------
+            
+                actual_minus_prediction_values = [
+                    output_row[col]
+                    for col in required_residual_cols
+                    if col in output_row and pd.notna(output_row[col])
+                ]
+            
+                pred_too_high_values = [
+                    output_row[col]
+                    for col in required_too_high_cols
+                    if col in output_row and pd.notna(output_row[col])
+                ]
+            
+                # Average of:
+                # 5d_actual_minus_prediction,
+                # 7d_actual_minus_prediction,
+                # 14d_actual_minus_prediction,
+                # 28d_actual_minus_prediction
+                output_row["average_actual_minus_prediction"] = (
+                    float(np.mean(actual_minus_prediction_values))
+                    if actual_minus_prediction_values
+                    else np.nan
+                )
+            
+                # Sum of:
+                # 5d_prediction_too_high,
+                # 7d_prediction_too_high,
+                # 14d_prediction_too_high,
+                # 28d_prediction_too_high
+                output_row["total_pred_too_high"] = (
+                    int(np.sum(pred_too_high_values))
+                    if pred_too_high_values
+                    else np.nan
+                )
+            
+                # Horizon-level too-high rates.
+                # At row level these are equivalent to 0/1 flags,
+                # but they make pivoting easier later.
+                for horizon in HORIZONS:
+                    too_high_col = f"{horizon}d_prediction_too_high"
+                    rate_col = f"{horizon}d_pred_too_high_rate"
+            
+                    output_row[rate_col] = (
+                        float(output_row[too_high_col])
+                        if too_high_col in output_row and pd.notna(output_row[too_high_col])
+                        else np.nan
+                    )
+            
+                # Total rate across all horizons.
+                # Example:
+                # total_pred_too_high = 2
+                # total_pred_too_high_rate = 2 / 4 = 0.50
+                output_row["total_pred_too_high_rate"] = (
+                    float(output_row["total_pred_too_high"] / len(HORIZONS))
+                    if pd.notna(output_row["total_pred_too_high"])
+                    else np.nan
+                )
+            
                 results.append(output_row)
                 append_row_to_csv(output_row, output_path)
-
+            
                 print(
                     f"    Appended result | "
                     f"{model_params['backtest_name']} | "
                     f"{symbol} | "
-                    f"{test_date.date()}",
+                    f"{test_date.date()} | "
+                    f"avg_actual_minus_pred={output_row['average_actual_minus_prediction']:.4f} | "
+                    f"total_pred_too_high={output_row['total_pred_too_high']} | "
+                    f"total_pred_too_high_rate={output_row['total_pred_too_high_rate']:.2%}",
                     flush=True,
                 )
             else:
