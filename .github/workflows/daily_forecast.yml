@@ -31,8 +31,11 @@ jobs:
           pip install -r requirements.txt
 
       - name: Run forecast pipeline
+        env:
+          PYTHONUNBUFFERED: "1"
+          SMOKE_TEST: "true"
         run: |
-          python src/forecast_pipeline.py
+          python -u src/forecast_pipeline.py
 
       - name: Commit updated forecast outputs
         run: |
