@@ -436,6 +436,17 @@ def run_backtest(features, model_params, output_path):
             if test_row.empty:
                 print("    Skipped: empty test row.", flush=True)
                 continue
+            
+            test_row_index = test_row.index[0]
+            
+            if test_row_index == 0:
+                print("    Skipped: no previous trading day available.", flush=True)
+                continue
+            
+            previous_row = symbol_df.iloc[test_row_index - 1]
+            
+            previous_trading_date = previous_row["date"].date()
+            previous_close_before_test_start = float(previous_row["close"])
 
             if test_row[feature_cols].isna().any(axis=None):
                 print("    Skipped: test row has missing feature values.", flush=True)
@@ -451,6 +462,9 @@ def run_backtest(features, model_params, output_path):
                 "training_start_date": training_start_date.date(),
                 "training_end_date": training_end_date.date(),
                 "test_start_date": test_date.date(),
+                "previous_trading_date": previous_trading_date,
+                "previous_close_before_test_start": previous_close_before_test_start,
+                "test_start_close": float(test_row.iloc[0]["close"]),
                 "test_end_date": None,
             }
 
