@@ -29,6 +29,8 @@ BACKTEST_OUTPUT_PATH = os.path.join(OUTPUT_DIR, "backtest_results.csv")
 PRODUCTION_OUTPUT_PATH = os.path.join(OUTPUT_DIR, "production_forecast.csv")
 
 SMOKE_TEST = os.getenv("SMOKE_TEST", "false").lower() == "true"
+SMOKE_TEST_DAYS_PER_SYMBOL = int(os.getenv("SMOKE_TEST_DAYS_PER_SYMBOL", "10"))
+SMOKE_TEST_PARAMETER_COUNT = int(os.getenv("SMOKE_TEST_PARAMETER_COUNT", "2"))
 
 
 # Hyperparameter combinations to test.
@@ -49,10 +51,31 @@ PARAMETER_GRID = [
         "random_state": 42,
     },
     {
+        "backtest_name": "rf_25trees_depth6_leaf20",
+        "n_estimators": 25,
+        "max_depth": 6,
+        "min_samples_leaf": 20,
+        "random_state": 42,
+    },
+    {
         "backtest_name": "rf_50trees_depth6_leaf20",
         "n_estimators": 50,
         "max_depth": 6,
         "min_samples_leaf": 20,
+        "random_state": 42,
+    },
+    {
+        "backtest_name": "rf_50trees_depth8_leaf10",
+        "n_estimators": 50,
+        "max_depth": 8,
+        "min_samples_leaf": 10,
+        "random_state": 42,
+    },
+    {
+        "backtest_name": "rf_100trees_depth8_leaf10",
+        "n_estimators": 100,
+        "max_depth": 8,
+        "min_samples_leaf": 10,
         "random_state": 42,
     },
 ]
@@ -493,8 +516,12 @@ def run_backtest(features, model_params, output_path):
         ]["date"].unique()
 
         if SMOKE_TEST:
-            print("SMOKE_TEST enabled: only testing first 3 dates per symbol.", flush=True)
-            test_dates = test_dates[:3]
+            print(
+                f"SMOKE_TEST enabled: only testing first "
+                f"{SMOKE_TEST_DAYS_PER_SYMBOL} dates per symbol.",
+                flush=True,
+            )
+            test_dates = test_dates[:SMOKE_TEST_DAYS_PER_SYMBOL]
 
         for test_date in test_dates:
             test_date = pd.to_datetime(test_date)
@@ -652,8 +679,12 @@ def run_backtest_grid(features):
     parameter_grid = PARAMETER_GRID
 
     if SMOKE_TEST:
-        print("SMOKE_TEST enabled: using only first parameter combination.", flush=True)
-        parameter_grid = PARAMETER_GRID[:1]
+        print(
+            f"SMOKE_TEST enabled: using first "
+            f"{SMOKE_TEST_PARAMETER_COUNT} parameter combinations.",
+            flush=True,
+        )
+        parameter_grid = PARAMETER_GRID[:SMOKE_TEST_PARAMETER_COUNT]
 
     all_results = []
 
