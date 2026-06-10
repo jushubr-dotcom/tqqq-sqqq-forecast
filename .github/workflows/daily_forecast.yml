@@ -1,1 +1,45 @@
 
+name: Daily TQQQ SQQQ Forecast
+
+on:
+  schedule:
+    # Runs every weekday at 07:00 UTC.
+    # UK time: 07:00 during winter, 08:00 during British Summer Time.
+    - cron: "0 7 * * 1-5"
+
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  run-forecast:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Python packages
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run forecast pipeline
+        run: |
+          python src/forecast_pipeline.py
+
+      - name: Commit updated forecast outputs
+        run: |
+          git config --global user.name "github-actions-bot"
+          git config --global user.email "github-actions-bot@users.noreply.github.com"
+
+          git add outputs/backtest_results.csv outputs/production_forecast.csv
+
+          git commit -m "Update daily TQQQ SQQQ forecasts" || echo "No changes to commit"
+          git push
