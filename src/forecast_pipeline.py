@@ -96,44 +96,108 @@ def append_row_to_csv(row, output_path):
 # DATA DOWNLOAD + CLEANING
 # ============================================================
 
+def download_one_symbol(symbol, max_retries=3):
+    """
+    Downloads one symbol at a time from Yahoo Finance.
+    This avoids yfinance database lock issues caused by concurrent downloads.
+    """
+
+    last_error = None
+
+    for attempt in range(1, max_retries + 1):
+        try:
+            print(
+                f"Downloading {symbol} from Yahoo Finance... "
+                f"attempt {attempt}/{max_retries}",
+                flush=True,
+            )
+
+            df = yf.download(
+                tickers=symbol,
+                period="5y",
+                interval="1d",
+                auto_adjust=False,
+                progress=False,
+                threads=False,
+            )
+
+            if df is None or df.empty:
+                raise ValueError(f"No data returned for {symbol}")
+
+            df = df.reset_index()
+
+            # Flatten columns if yfinance returns MultiIndex columns.
+            if isinstance(df.columns, pd.MultiIndex):
+                df.columns = [
+                    col[0].lower().replace(" ", "_")
+                    if isinstance(col, tuple)
+                    else str(col).lower().replace(" ", "_")
+                    for col in df.columns
+                ]
+            else:
+                df.columns = [str(c).lower().replace(" ", "_") for c in df.columns]
+
+            df["symbol"] = symbol
+
+            expected_cols = ["date", "open", "high", "low", "close", "volume", "symbol"]
+
+            missing_cols = [col for col in expected_cols if col not in df.columns]
+
+            if missing_cols:
+                raise ValueError(
+                    f"Missing columns for {symbol}: {missing_cols}. "
+                    f"Available columns: {list(df.columns)}"
+                )
+
+            df = df[expected_cols]
+
+            print(f"Downloaded {symbol}: {len(df):,} rows.", flush=True)
+
+            return df
+
+        except Exception as e:
+            last_error = e
+            print(
+                f"Download failed for {symbol} on attempt {attempt}: {e}",
+                flush=True,
+            )
+
+    raise RuntimeError(
+        f"Failed to download {symbol} after {max_retries} attempts. "
+        f"Last error: {last_error}"
+    )
+
+
 def download_data(symbols):
     """
     Downloads 5 years of daily OHLCV data from Yahoo Finance.
+    Downloads symbols one by one to avoid yfinance database lock issues.
     """
 
     print("Downloading data from Yahoo Finance...", flush=True)
 
-    raw = yf.download(
-        tickers=symbols,
-        period="5y",
-        interval="1d",
-        group_by="ticker",
-        auto_adjust=False,
-        progress=False,
-        threads=True,
-    )
-
     frames = []
 
     for symbol in symbols:
-        df = raw[symbol].copy()
-        df = df.reset_index()
-
-        df.columns = [str(c).lower().replace(" ", "_") for c in df.columns]
-
-        df["symbol"] = symbol
-
-        expected_cols = ["date", "open", "high", "low", "close", "volume", "symbol"]
-        df = df[expected_cols]
-
-        frames.append(df)
+        symbol_df = download_one_symbol(symbol)
+        frames.append(symbol_df)
 
     data = pd.concat(frames, ignore_index=True)
 
     data["date"] = pd.to_datetime(data["date"]).dt.date
     data = data.sort_values(["symbol", "date"]).reset_index(drop=True)
 
-    print(f"Downloaded {len(data):,} rows.", flush=True)
+    downloaded_symbols = sorted(data["symbol"].unique().tolist())
+    missing_symbols = sorted(set(symbols) - set(downloaded_symbols))
+
+    if missing_symbols:
+        raise RuntimeError(
+            f"Missing required symbols after download: {missing_symbols}. "
+            f"Downloaded symbols: {downloaded_symbols}"
+        )
+
+    print(f"Downloaded total rows: {len(data):,}", flush=True)
+    print(f"Downloaded symbols: {downloaded_symbols}", flush=True)
 
     return data
 
@@ -181,7 +245,26 @@ def add_cross_symbol_features(data):
 
     print("Adding cross-symbol features...", flush=True)
 
+    available_symbols = sorted(data["symbol"].unique().tolist())
+    missing_symbols = sorted(set(SYMBOLS) - set(available_symbols))
+
+    if missing_symbols:
+        raise RuntimeError(
+            f"Cannot create cross-symbol features. "
+            f"Missing symbols: {missing_symbols}. "
+            f"Available symbols: {available_symbols}"
+        )
+
     wide_close = data.pivot(index="date", columns="symbol", values="close").reset_index()
+
+    required_columns = ["date", "TQQQ", "SQQQ"]
+    missing_columns = [col for col in required_columns if col not in wide_close.columns]
+
+    if missing_columns:
+        raise RuntimeError(
+            f"Cross-symbol pivot is missing columns: {missing_columns}. "
+            f"Available columns: {list(wide_close.columns)}"
+        )
 
     tqqq_map = wide_close[["date", "TQQQ"]].rename(columns={"TQQQ": "tqqq_close"})
     sqqq_map = wide_close[["date", "SQQQ"]].rename(columns={"SQQQ": "sqqq_close"})
