@@ -39,6 +39,27 @@ SMOKE_TEST_PARAMETER_COUNT = int(os.getenv("SMOKE_TEST_PARAMETER_COUNT", "2"))
 # Add/remove combinations here.
 PARAMETER_GRID = [
     {
+        "backtest_name": "rf_100trees_depth6_leaf3",
+        "n_estimators": 100,
+        "max_depth": 6,
+        "min_samples_leaf": 3,
+        "random_state": 42,
+    },
+    {
+        "backtest_name": "rf_100trees_depth6_leaf5",
+        "n_estimators": 100,
+        "max_depth": 6,
+        "min_samples_leaf": 5,
+        "random_state": 42,
+    },
+    {
+        "backtest_name": "rf_100trees_depth8_leaf3",
+        "n_estimators": 100,
+        "max_depth": 8,
+        "min_samples_leaf": 3,
+        "random_state": 42,
+    },
+    {
         "backtest_name": "rf_100trees_depth8_leaf5",
         "n_estimators": 100,
         "max_depth": 8,
@@ -46,17 +67,17 @@ PARAMETER_GRID = [
         "random_state": 42,
     },
     {
-        "backtest_name": "rf_100trees_depth8_leaf10",
+        "backtest_name": "rf_100trees_depth8_leaf7",
         "n_estimators": 100,
         "max_depth": 8,
-        "min_samples_leaf": 10,
+        "min_samples_leaf": 7,
         "random_state": 42,
     },
     {
-        "backtest_name": "rf_100trees_depth8_leaf15",
+        "backtest_name": "rf_100trees_depth10_leaf3",
         "n_estimators": 100,
-        "max_depth": 8,
-        "min_samples_leaf": 15,
+        "max_depth": 10,
+        "min_samples_leaf": 3,
         "random_state": 42,
     },
     {
@@ -67,31 +88,24 @@ PARAMETER_GRID = [
         "random_state": 42,
     },
     {
-        "backtest_name": "rf_100trees_depth10_leaf10",
+        "backtest_name": "rf_100trees_depth10_leaf7",
         "n_estimators": 100,
         "max_depth": 10,
-        "min_samples_leaf": 10,
+        "min_samples_leaf": 7,
         "random_state": 42,
     },
     {
-        "backtest_name": "rf_100trees_depth10_leaf15",
-        "n_estimators": 100,
-        "max_depth": 10,
-        "min_samples_leaf": 15,
-        "random_state": 42,
-    },
-    {
-        "backtest_name": "rf_150trees_depth8_leaf10",
+        "backtest_name": "rf_150trees_depth8_leaf5",
         "n_estimators": 150,
         "max_depth": 8,
-        "min_samples_leaf": 10,
+        "min_samples_leaf": 5,
         "random_state": 42,
     },
     {
-        "backtest_name": "rf_150trees_depth10_leaf10",
+        "backtest_name": "rf_150trees_depth10_leaf5",
         "n_estimators": 150,
         "max_depth": 10,
-        "min_samples_leaf": 10,
+        "min_samples_leaf": 5,
         "random_state": 42,
     },
 ]
