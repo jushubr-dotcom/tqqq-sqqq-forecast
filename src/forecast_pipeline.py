@@ -102,7 +102,6 @@ PARAMETER_GRID = [
         "random_state": 42,
     },
 ]
-]
 
 
 
