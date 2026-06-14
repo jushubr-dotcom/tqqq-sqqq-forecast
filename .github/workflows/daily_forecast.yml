@@ -30,22 +30,22 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Run RandomForest forecast pipeline
-        env:
-          PYTHONUNBUFFERED: "1"
-          MODEL_NAME: "RandomForest"
-          SMOKE_TEST: "true"
-          SMOKE_TEST_DAYS_PER_SYMBOL: "40"
-          SMOKE_TEST_PARAMETER_COUNT: "10"
-        run: |
-          python -u src/forecast_pipeline.py
+      #- name: Run RandomForest forecast pipeline
+        #env:
+          #PYTHONUNBUFFERED: "1"
+          #MODEL_NAME: "RandomForest"
+          #SMOKE_TEST: "true"
+          #SMOKE_TEST_DAYS_PER_SYMBOL: "40"
+          #SMOKE_TEST_PARAMETER_COUNT: "10"
+        #run: |
+          #python -u src/forecast_pipeline.py
 
       - name: Run ExtraTrees forecast pipeline
         env:
           PYTHONUNBUFFERED: "1"
           MODEL_NAME: "ExtraTrees"
           SMOKE_TEST: "true"
-          SMOKE_TEST_DAYS_PER_SYMBOL: "40"
+          SMOKE_TEST_DAYS_PER_SYMBOL: "80"
           SMOKE_TEST_PARAMETER_COUNT: "10"
         run: |
           python -u src/forecast_pipeline_extratrees.py
