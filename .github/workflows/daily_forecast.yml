@@ -32,6 +32,7 @@ jobs:
 
       - name: Run forecast pipeline
         env:
+          MODEL_NAME: "RandomForest"
           PYTHONUNBUFFERED: "1"
         run: |
           python -u src/forecast_pipeline.py
