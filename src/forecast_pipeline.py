@@ -34,6 +34,7 @@ SMOKE_TEST = os.getenv("SMOKE_TEST", "false").lower() == "true"
 SMOKE_TEST_DAYS_PER_SYMBOL = int(os.getenv("SMOKE_TEST_DAYS_PER_SYMBOL", "10"))
 SMOKE_TEST_PARAMETER_COUNT = int(os.getenv("SMOKE_TEST_PARAMETER_COUNT", "2"))
 
+MODEL_NAME = os.getenv("MODEL_NAME", "RandomForest")
 
 # Hyperparameter combinations to test.
 # Add/remove combinations here.
@@ -121,22 +122,39 @@ def ensure_output_dir():
 
 def append_row_to_csv(row, output_path):
     """
-    Appends one backtest result row to CSV immediately.
+    Appends one row to CSV while preserving historical rows.
 
-    In GitHub Actions, the file will only be pushed to the repo
-    at the end of the workflow, but this still writes incrementally
-    inside the runner and gives us log visibility as the backtest runs.
+    If the existing CSV is missing new columns, this function rewrites the
+    file once with the expanded schema, keeping all old rows.
     """
 
     row_df = pd.DataFrame([row])
-    file_exists = os.path.exists(output_path)
 
-    row_df.to_csv(
-        output_path,
-        mode="a",
-        header=not file_exists,
-        index=False,
-    )
+    if not os.path.exists(output_path):
+        row_df.to_csv(output_path, mode="w", header=True, index=False)
+        return
+
+    existing_df = pd.read_csv(output_path)
+
+    all_columns = list(existing_df.columns)
+
+    for col in row_df.columns:
+        if col not in all_columns:
+            all_columns.append(col)
+
+    for col in all_columns:
+        if col not in existing_df.columns:
+            existing_df[col] = np.nan
+
+        if col not in row_df.columns:
+            row_df[col] = np.nan
+
+    existing_df = existing_df[all_columns]
+    row_df = row_df[all_columns]
+
+    combined_df = pd.concat([existing_df, row_df], ignore_index=True)
+
+    combined_df.to_csv(output_path, mode="w", header=True, index=False)
 
 
 # ============================================================
@@ -588,6 +606,7 @@ def run_backtest(features, model_params, output_path):
 
             output_row = {
                 "run_timestamp": RUN_TIMESTAMP,
+                "model_name": MODEL_NAME,
                 "backtest_name": model_params["backtest_name"],
                 "n_estimators": model_params["n_estimators"],
                 "max_depth": model_params["max_depth"],
@@ -909,6 +928,7 @@ def run_production_forecast(features):
 
         output_row = {
             "forecast_date": forecast_date,
+            "model_name": MODEL_NAME,
             "data_as_of_date": latest_date.date(),
             "stock_symbol": symbol,
             "stock_start_value": float(latest_row.iloc[0]["open"]),
