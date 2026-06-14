@@ -40,27 +40,6 @@ MODEL_NAME = os.getenv("MODEL_NAME", "ExtraTrees")
 # Add/remove combinations here.
 PARAMETER_GRID = [
     {
-        "backtest_name": "et_100trees_depth9_leaf1",
-        "n_estimators": 100,
-        "max_depth": 9,
-        "min_samples_leaf": 1,
-        "random_state": 42,
-    },
-    {
-        "backtest_name": "et_100trees_depth9_leaf2",
-        "n_estimators": 100,
-        "max_depth": 9,
-        "min_samples_leaf": 2,
-        "random_state": 42,
-    },
-    {
-        "backtest_name": "et_100trees_depth9_leaf3",
-        "n_estimators": 100,
-        "max_depth": 9,
-        "min_samples_leaf": 3,
-        "random_state": 42,
-    },
-    {
         "backtest_name": "et_100trees_depth10_leaf1",
         "n_estimators": 100,
         "max_depth": 10,
@@ -82,6 +61,20 @@ PARAMETER_GRID = [
         "random_state": 42,
     },
     {
+        "backtest_name": "et_100trees_depth11_leaf1",
+        "n_estimators": 100,
+        "max_depth": 11,
+        "min_samples_leaf": 1,
+        "random_state": 42,
+    },
+    {
+        "backtest_name": "et_100trees_depth11_leaf2",
+        "n_estimators": 100,
+        "max_depth": 11,
+        "min_samples_leaf": 2,
+        "random_state": 42,
+    },
+    {
         "backtest_name": "et_100trees_depth12_leaf1",
         "n_estimators": 100,
         "max_depth": 12,
@@ -96,6 +89,13 @@ PARAMETER_GRID = [
         "random_state": 42,
     },
     {
+        "backtest_name": "et_100trees_depth14_leaf1",
+        "n_estimators": 100,
+        "max_depth": 14,
+        "min_samples_leaf": 1,
+        "random_state": 42,
+    },
+    {
         "backtest_name": "et_150trees_depth10_leaf2",
         "n_estimators": 150,
         "max_depth": 10,
@@ -103,14 +103,13 @@ PARAMETER_GRID = [
         "random_state": 42,
     },
     {
-        "backtest_name": "et_300trees_depth10_leaf2",
-        "n_estimators": 300,
+        "backtest_name": "et_200trees_depth10_leaf2",
+        "n_estimators": 200,
         "max_depth": 10,
         "min_samples_leaf": 2,
         "random_state": 42,
     },
 ]
-
 
 
 # Production model parameters.
