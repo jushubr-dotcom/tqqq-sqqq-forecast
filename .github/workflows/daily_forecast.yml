@@ -1,23 +1,28 @@
-
-name: Daily TQQQ SQQQ Forecast
+name: Daily Forecast Smoke Test
 
 on:
-  schedule:
-    # Runs every weekday at 07:00 UTC.
-    # UK time: 07:00 during winter, 08:00 during British Summer Time.
-    - cron: "0 7 * * 1-5"
-
   workflow_dispatch:
+  push:
+    branches:
+      - main
+  schedule:
+    # Runs daily at 7am UTC
+    - cron: "0 7 * * *"
 
 permissions:
   contents: write
 
 jobs:
-  run-forecast:
+  smoke-test-all-models:
     runs-on: ubuntu-latest
 
+    env:
+      SMOKE_TEST: "true"
+      SMOKE_TEST_DAYS_PER_SYMBOL: "3"
+      SMOKE_TEST_PARAMETER_COUNT: "1"
+
     steps:
-      - name: Check out repository
+      - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Set up Python
@@ -25,37 +30,140 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install Python packages
+      - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          pip install pandas numpy scikit-learn yfinance xgboost lightgbm catboost
 
-      - name: Run RandomForest forecast pipeline
+      - name: Create outputs folder
+        run: |
+          mkdir -p outputs
+
+      - name: Run Random Forest smoke test
+        run: |
+          python forecast_pipeline_randomforest.py
         env:
-          PYTHONUNBUFFERED: "1"
-          MODEL_NAME: "RandomForest"
-          SMOKE_TEST: "true"
-          SMOKE_TEST_DAYS_PER_SYMBOL: "40"
-          SMOKE_TEST_PARAMETER_COUNT: "10"
-        run: |
-          python -u src/forecast_pipeline.py
+          MODEL_NAME: RandomForest
 
-      #- name: Run ExtraTrees forecast pipeline
-        #env:
-          #PYTHONUNBUFFERED: "1"
-          #MODEL_NAME: "ExtraTrees"
-          #SMOKE_TEST: "true"
-          #SMOKE_TEST_DAYS_PER_SYMBOL: "80"
-          #SMOKE_TEST_PARAMETER_COUNT: "10"
-       #run: |
-          #python -u src/forecast_pipeline_extratrees.py
-          
-      - name: Commit updated forecast outputs
+      - name: Run Extra Trees smoke test
         run: |
-          git config --global user.name "github-actions-bot"
-          git config --global user.email "github-actions-bot@users.noreply.github.com"
-      
-          git add outputs/backtest_results.csv outputs/production_forecast.csv
-      
-          git commit -m "Append forecast outputs" || echo "No changes to commit"
-          git push
+          python forecast_pipeline_extratrees.py
+        env:
+          MODEL_NAME: ExtraTrees
+
+      - name: Run XGBoost smoke test
+        run: |
+          python forecast_pipeline_xgboost.py
+        env:
+          MODEL_NAME: XGBoost
+
+      - name: Run LightGBM smoke test
+        run: |
+          python forecast_pipeline_lightgbm.py
+        env:
+          MODEL_NAME: LightGBM
+
+      - name: Run CatBoost smoke test
+        run: |
+          python forecast_pipeline_catboost.py
+        env:
+          MODEL_NAME: CatBoost
+
+      - name: Run Ridge smoke test
+        run: |
+          python forecast_pipeline_ridgeregression.py
+        env:
+          MODEL_NAME: Ridge
+
+      - name: Run ElasticNet smoke test
+        run: |
+          python forecast_pipeline_elasticnetlogreg.py
+        env:
+          MODEL_NAME: ElasticNet
+
+      - name: Run ensemble backtest
+        run: |
+          python ensemble_backtest.py
+
+      - name: Run ensemble production forecast
+        run: |
+          python ensemble_production.py
+
+      - name: Show output files
+        run: |
+          echo "Outputs folder:"
+          ls -lah outputs
+
+          echo ""
+          echo "Backtest rows:"
+          python - <<'PY'
+          import pandas as pd
+          from pathlib import Path
+
+          p = Path("outputs/backtest_results.csv")
+          if p.exists():
+              df = pd.read_csv(p)
+              print(df.shape)
+              print(df[["model_name", "backtest_name", "symbol"]].drop_duplicates().head(50))
+          else:
+              print("Missing outputs/backtest_results.csv")
+          PY
+
+          echo ""
+          echo "Production rows:"
+          python - <<'PY'
+          import pandas as pd
+          from pathlib import Path
+
+          p = Path("outputs/production_forecast.csv")
+          if p.exists():
+              df = pd.read_csv(p)
+              print(df.shape)
+              print(df[["model_name", "production_model_name", "stock_symbol"]].drop_duplicates().head(50))
+          else:
+              print("Missing outputs/production_forecast.csv")
+          PY
+
+          echo ""
+          echo "Ensemble backtest:"
+          python - <<'PY'
+          import pandas as pd
+          from pathlib import Path
+
+          p = Path("outputs/ensemble_backtest_results.csv")
+          if p.exists():
+              df = pd.read_csv(p)
+              print(df.shape)
+              print(df.head())
+          else:
+              print("Missing outputs/ensemble_backtest_results.csv")
+          PY
+
+          echo ""
+          echo "Ensemble production:"
+          python - <<'PY'
+          import pandas as pd
+          from pathlib import Path
+
+          p = Path("outputs/ensemble_production_forecast.csv")
+          if p.exists():
+              df = pd.read_csv(p)
+              print(df.shape)
+              print(df.head())
+          else:
+              print("Missing outputs/ensemble_production_forecast.csv")
+          PY
+
+      - name: Commit updated outputs
+        run: |
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+
+          git add outputs/backtest_results.csv outputs/production_forecast.csv outputs/ensemble_backtest_results.csv outputs/ensemble_production_forecast.csv
+
+          if git diff --cached --quiet; then
+            echo "No output changes to commit."
+          else
+            git commit -m "Run daily forecast smoke test"
+            git push
+          fi
