@@ -23,12 +23,17 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.11"
+
+      - name: List repo files
+        run: |
+          pwd
+          find . -maxdepth 3 -type f | sort
 
       - name: Install dependencies
         run: |
@@ -159,7 +164,7 @@ jobs:
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
 
-          git add outputs/backtest_results.csv outputs/production_forecast.csv outputs/ensemble_backtest_results.csv outputs/ensemble_production_forecast.csv
+          git add outputs/*.csv
 
           if git diff --cached --quiet; then
             echo "No output changes to commit."
