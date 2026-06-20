@@ -20,8 +20,15 @@ warnings.filterwarnings("ignore")
 RUN_TIMESTAMP = datetime.utcnow().strftime("%Y-%m-%d_%H-%M-%S")
 
 SYMBOLS = ["TQQQ", "SQQQ"]
-HORIZONS = [5, 7, 14, 28]
+
+# Output columns requested: 3d, 5d, 7d, 9d.
+# If you also want 11d, change this to [3, 5, 7, 9, 11]
+HORIZONS = [3, 5, 7, 9]
+
 LAG_DAYS = list(range(1, 53))
+
+# New cumulative return features requested
+RETURN_WINDOWS = [5, 7, 10, 14, 20]
 
 BACKTEST_START_DATE = "2026-01-01"
 BACKTEST_END_DATE = "2026-05-31"
@@ -36,8 +43,6 @@ SMOKE_TEST_PARAMETER_COUNT = int(os.getenv("SMOKE_TEST_PARAMETER_COUNT", "2"))
 
 MODEL_NAME = os.getenv("MODEL_NAME", "RandomForest")
 
-# Hyperparameter combinations to test.
-# Add/remove combinations here.
 PARAMETER_GRID = [
     {
         "backtest_name": "rf_100trees_depth8_leaf1_sqrt",
@@ -105,11 +110,6 @@ PARAMETER_GRID = [
     },
 ]
 
-
-
-# Production model parameters.
-# For now, use the strongest/last combination.
-# Later, you can select this automatically based on best backtest results.
 PRODUCTION_MODEL_PARAMS = PARAMETER_GRID[-1]
 
 
@@ -121,41 +121,51 @@ def ensure_output_dir():
     os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 
+def reset_output_file(output_path):
+    """
+    Deletes the old backtest file so the new schema starts clean.
+    """
+    if os.path.exists(output_path):
+        os.remove(output_path)
+        print(f"Deleted old output file: {output_path}", flush=True)
+
+
 def append_row_to_csv(row, output_path):
     """
-    Appends one row to CSV while preserving historical rows.
-
-    If the existing CSV is missing new columns, this function rewrites the
-    file once with the expanded schema, keeping all old rows.
+    Appends one row to CSV.
+    This assumes we are starting from a clean file for this new schema.
     """
-
     row_df = pd.DataFrame([row])
 
     if not os.path.exists(output_path):
         row_df.to_csv(output_path, mode="w", header=True, index=False)
-        return
+    else:
+        row_df.to_csv(output_path, mode="a", header=False, index=False)
 
-    existing_df = pd.read_csv(output_path)
 
-    all_columns = list(existing_df.columns)
+def safe_divide(numerator, denominator):
+    if denominator is None or pd.isna(denominator) or denominator == 0:
+        return np.nan
+    return numerator / denominator
 
-    for col in row_df.columns:
-        if col not in all_columns:
-            all_columns.append(col)
 
-    for col in all_columns:
-        if col not in existing_df.columns:
-            existing_df[col] = np.nan
+def get_top_features_from_importances(feature_cols, importance_arrays, top_n=5):
+    """
+    Combines feature importances across horizon models and returns top N feature names.
+    """
+    if not importance_arrays:
+        return [None] * top_n
 
-        if col not in row_df.columns:
-            row_df[col] = np.nan
+    importance_matrix = np.vstack(importance_arrays)
+    avg_importance = importance_matrix.mean(axis=0)
 
-    existing_df = existing_df[all_columns]
-    row_df = row_df[all_columns]
+    ranked_indices = np.argsort(avg_importance)[::-1]
+    top_features = [feature_cols[i] for i in ranked_indices[:top_n]]
 
-    combined_df = pd.concat([existing_df, row_df], ignore_index=True)
+    while len(top_features) < top_n:
+        top_features.append(None)
 
-    combined_df.to_csv(output_path, mode="w", header=True, index=False)
+    return top_features
 
 
 # ============================================================
@@ -167,7 +177,6 @@ def download_one_symbol(symbol, max_retries=3):
     Downloads one symbol at a time from Yahoo Finance.
     This avoids yfinance database lock issues caused by concurrent downloads.
     """
-
     last_error = None
 
     for attempt in range(1, max_retries + 1):
@@ -192,7 +201,6 @@ def download_one_symbol(symbol, max_retries=3):
 
             df = df.reset_index()
 
-            # Flatten columns if yfinance returns MultiIndex columns.
             if isinstance(df.columns, pd.MultiIndex):
                 df.columns = [
                     col[0].lower().replace(" ", "_")
@@ -235,11 +243,6 @@ def download_one_symbol(symbol, max_retries=3):
 
 
 def download_data(symbols):
-    """
-    Downloads 5 years of daily OHLCV data from Yahoo Finance.
-    Downloads symbols one by one to avoid yfinance database lock issues.
-    """
-
     print("Downloading data from Yahoo Finance...", flush=True)
 
     frames = []
@@ -269,11 +272,6 @@ def download_data(symbols):
 
 
 def clean_data(data):
-    """
-    Basic data cleaning.
-    Removes bad rows, missing prices, and impossible values.
-    """
-
     print("Cleaning data...", flush=True)
 
     data = data.copy()
@@ -300,15 +298,14 @@ def clean_data(data):
 
 def add_cross_symbol_features(data):
     """
-    Adds the other ETF close price as a feature.
+    Adds the other ETF close price and return as features.
 
-    For TQQQ rows:
+    For TQQQ:
         other_symbol_close = SQQQ close
 
-    For SQQQ rows:
+    For SQQQ:
         other_symbol_close = TQQQ close
     """
-
     print("Adding cross-symbol features...", flush=True)
 
     available_symbols = sorted(data["symbol"].unique().tolist())
@@ -346,6 +343,8 @@ def add_cross_symbol_features(data):
 
     data = data.drop(columns=["tqqq_close", "sqqq_close"])
 
+    data = data.sort_values(["symbol", "date"]).reset_index(drop=True)
+
     return data
 
 
@@ -355,9 +354,13 @@ def add_cross_symbol_features(data):
 
 def create_features(data):
     """
-    Creates lag features, moving averages, and future target columns.
+    Creates:
+    - daily return features
+    - lagged close and lagged return features
+    - moving average and moving-average ratio features
+    - new past cumulative return features
+    - future return targets
     """
-
     print("Creating features...", flush=True)
 
     data = data.copy()
@@ -371,31 +374,54 @@ def create_features(data):
         df = data[data["symbol"] == symbol].copy()
         df = df.sort_values("date").reset_index(drop=True)
 
+        # -------------------------------
+        # Base return / volatility features
+        # -------------------------------
         df["daily_return"] = df["close"].pct_change()
         df["open_to_close_return"] = (df["close"] - df["open"]) / df["open"]
         df["high_low_range"] = (df["high"] - df["low"]) / df["close"]
 
+        # -------------------------------
+        # Lag features
+        # -------------------------------
         for lag in LAG_DAYS:
             df[f"close_lag_{lag}"] = df["close"].shift(lag)
             df[f"return_lag_{lag}"] = df["daily_return"].shift(lag)
 
+        # -------------------------------
+        # Moving average features
+        # -------------------------------
         for window in [7, 14, 28]:
             df[f"ma_{window}"] = df["close"].rolling(window=window).mean()
             df[f"ma_ratio_{window}"] = df["close"] / df[f"ma_{window}"]
 
+        # -------------------------------
+        # New cumulative historical return features
+        # -------------------------------
+        for window in RETURN_WINDOWS:
+            df[f"return_{window}d_past"] = df["close"].pct_change(window)
+
+        # -------------------------------
+        # Other symbol features
+        # -------------------------------
         df["other_symbol_return"] = df["other_symbol_close"].pct_change()
 
+        # -------------------------------
+        # Future targets
+        # Important:
+        # target_return_Xd is return from this row's close to future close.
+        # In backtest, this row will be the PREVIOUS trading day row.
+        # -------------------------------
         for horizon in HORIZONS:
-            df[f"actual_{horizon}d"] = df["close"].shift(-horizon)
+            df[f"actual_{horizon}d_close"] = df["close"].shift(-horizon)
+            df[f"actual_{horizon}d_date"] = df["date"].shift(-horizon)
 
             df[f"target_return_{horizon}d"] = (
-                df[f"actual_{horizon}d"] - df["close"]
-            ) / df["close"]
+                df[f"actual_{horizon}d_close"] / df["close"]
+            ) - 1
 
-            # 1 means future close is lower than today's close.
-            # 0 means no loss.
             df[f"target_loss_{horizon}d"] = np.where(
-                df[f"actual_{horizon}d"] < df["close"],
+                df[f"target_return_{horizon}d"] < 0,
                 1,
                 0,
             )
@@ -413,18 +439,15 @@ def create_features(data):
 def get_feature_columns(df):
     """
     Selects numeric feature columns used by the model.
-    Excludes date, symbol, actuals, and targets.
+    Excludes date, symbol, actuals, future dates, and target columns.
     """
-
-    excluded_cols = [
-        "date",
-        "symbol",
-    ]
+    excluded_cols = ["date", "symbol"]
 
     target_cols = []
 
     for horizon in HORIZONS:
-        target_cols.append(f"actual_{horizon}d")
+        target_cols.append(f"actual_{horizon}d_close")
+        target_cols.append(f"actual_{horizon}d_date")
         target_cols.append(f"target_return_{horizon}d")
         target_cols.append(f"target_loss_{horizon}d")
 
@@ -449,25 +472,27 @@ def train_models(train_df, feature_cols, horizon, model_params):
     Trains two models for one horizon:
 
     1. RandomForestRegressor:
-       Predicts future price.
+       Predicts future return percentage as decimal.
+       Example:
+           0.05 = +5%
+           -0.03 = -3%
 
     2. RandomForestClassifier:
        Predicts probability of loss.
     """
-
-    target_price_col = f"actual_{horizon}d"
+    target_return_col = f"target_return_{horizon}d"
     target_loss_col = f"target_loss_{horizon}d"
 
-    train_df = train_df.dropna(subset=feature_cols + [target_price_col, target_loss_col])
+    train_df = train_df.dropna(subset=feature_cols + [target_return_col, target_loss_col])
 
     if len(train_df) < 100:
         return None, None
 
     X_train = train_df[feature_cols]
-    y_price = train_df[target_price_col]
-    y_loss = train_df[target_loss_col]
+    y_return = train_df[target_return_col]
+    y_loss = train_df[target_loss_col].astype(int)
 
-    price_model = RandomForestRegressor(
+    return_model = RandomForestRegressor(
         n_estimators=model_params["n_estimators"],
         max_depth=model_params["max_depth"],
         min_samples_leaf=model_params["min_samples_leaf"],
@@ -476,7 +501,7 @@ def train_models(train_df, feature_cols, horizon, model_params):
         n_jobs=-1,
     )
 
-    price_model.fit(X_train, y_price)
+    return_model.fit(X_train, y_return)
 
     loss_model = RandomForestClassifier(
         n_estimators=model_params["n_estimators"],
@@ -493,17 +518,21 @@ def train_models(train_df, feature_cols, horizon, model_params):
     else:
         loss_model = None
 
-    return price_model, loss_model
+    return return_model, loss_model
 
 
-def predict_one_row(price_model, loss_model, row, feature_cols):
+def predict_one_row(return_model, loss_model, row, feature_cols):
     """
     Makes one prediction for one stock and one horizon.
-    """
 
+    Prediction is return percentage as decimal.
+    Example:
+        0.05 = +5%
+        -0.03 = -3%
+    """
     X = row[feature_cols]
 
-    prediction = float(price_model.predict(X)[0])
+    return_prediction = float(return_model.predict(X)[0])
 
     if loss_model is not None:
         proba = loss_model.predict_proba(X)[0]
@@ -519,30 +548,112 @@ def predict_one_row(price_model, loss_model, row, feature_cols):
 
     confidence_no_loss = 1 - loss_probability
 
-    return prediction, confidence_no_loss, loss_probability
+    return return_prediction, confidence_no_loss, loss_probability
+
+
+def get_leak_safe_training_df(symbol_df, training_start_date, prediction_feature_date, horizon):
+    """
+    Prevents target leakage.
+
+    At prediction_feature_date, we only know historical rows whose future target date
+    is <= prediction_feature_date.
+
+    Example:
+    If predicting from 2026-01-10 using a 5d target, we cannot train on 2026-01-08
+    because the 5d future close from 2026-01-08 is not known yet.
+    """
+    actual_date_col = f"actual_{horizon}d_date"
+
+    train_df = symbol_df[
+        (symbol_df["date"] >= training_start_date)
+        & (symbol_df[actual_date_col] <= prediction_feature_date)
+    ].copy()
+
+    return train_df
 
 
 # ============================================================
 # BACKTESTING
 # ============================================================
 
+def build_ordered_output_row(output_row):
+    """
+    Forces the CSV column order to match the requested structure.
+    """
+    ordered_cols = [
+        "run_timestamp",
+        "backtest_name",
+        "model_name",
+        "feature_1",
+        "feature_2",
+        "feature_3",
+        "feature_4",
+        "feature_5",
+        "n_estimators",
+        "max_depth",
+        "min_samples_leaf",
+        "random_state",
+        "symbol",
+        "training_start_date",
+        "training_end_date",
+        "test_start_date",
+        "test_end_date",
+        "previous_trading_date",
+        "previous_close_before_test_start",
+    ]
+
+    for horizon in HORIZONS:
+        ordered_cols += [
+            f"{horizon}d_return_pct_pred",
+            f"{horizon}d_return_pct_actual",
+            f"{horizon}d_close_actual",
+            f"{horizon}d_confidence_no_loss",
+            f"{horizon}d_loss_probability",
+            f"{horizon}d_count_pred_positive",
+            f"{horizon}d_count_pred_positive_w_actual_positive",
+            f"{horizon}d_buy_profit_pct",
+        ]
+
+    ordered_cols += [
+        "average_return_pct_pred",
+        "average_return_pct_actual",
+        "average_close_actual",
+        "average_confidence_no_loss",
+        "average_loss_probability",
+        "sum_count_pred_positive",
+        "sum_count_pred_positive_w_actual_positive",
+        "overall_buy_profit_pct",
+    ]
+
+    ordered_row = {}
+
+    for col in ordered_cols:
+        ordered_row[col] = output_row.get(col, np.nan)
+
+    return ordered_row
+
+
 def run_backtest(features, model_params, output_path):
     """
     Runs one backtest for one parameter combination.
 
-    For every trading day in the backtest period:
-    - Train on trailing 12 months
-    - Predict 5, 7, 14, and 28 trading days ahead
-    - Compare prediction to actual future close
-    - Append each successful result row to CSV immediately
+    For every test_start_date:
+    - Use PREVIOUS trading day row as the prediction input
+    - Use previous_close_before_test_start as the base close
+    - Predict future return %
+    - Compare against actual future return %
+    - Append result row to CSV
     """
-
     print(f"\nRunning backtest: {model_params['backtest_name']}", flush=True)
 
     results = []
 
     features = features.copy()
     features["date"] = pd.to_datetime(features["date"])
+    for horizon in HORIZONS:
+        features[f"actual_{horizon}d_date"] = pd.to_datetime(
+            features[f"actual_{horizon}d_date"]
+        )
 
     backtest_start = pd.to_datetime(BACKTEST_START_DATE)
     backtest_end = pd.to_datetime(BACKTEST_END_DATE)
@@ -571,195 +682,229 @@ def run_backtest(features, model_params, output_path):
         for test_date in test_dates:
             test_date = pd.to_datetime(test_date)
 
+            test_rows = symbol_df[symbol_df["date"] == test_date]
+
+            if test_rows.empty:
+                print("    Skipped: empty test row.", flush=True)
+                continue
+
+            test_row_index = test_rows.index[0]
+
+            if test_row_index == 0:
+                print("    Skipped: no previous trading day available.", flush=True)
+                continue
+
+            # ------------------------------------------------------------
+            # CRITICAL NO-LEAK SETUP
+            # ------------------------------------------------------------
+            # We do NOT use the test_date row to predict.
+            # We use the previous trading day row.
+            # That means all features and base close come from yesterday.
+            # ------------------------------------------------------------
+            previous_row = symbol_df.iloc[[test_row_index - 1]].copy()
+            previous_trading_date = pd.to_datetime(previous_row.iloc[0]["date"])
+            previous_close_before_test_start = float(previous_row.iloc[0]["close"])
+
+            if previous_row[feature_cols].isna().any(axis=None):
+                print("    Skipped: previous row has missing feature values.", flush=True)
+                continue
+
+            training_end_date = previous_trading_date
+            training_start_date = previous_trading_date - timedelta(days=365)
+
             print(
                 f"  Testing date: {test_date.date()} | "
+                f"prediction input date={previous_trading_date.date()} | "
                 f"backtest={model_params['backtest_name']} | "
                 f"symbol={symbol}",
                 flush=True,
             )
 
-            training_end_date = test_date - timedelta(days=1)
-            training_start_date = test_date - timedelta(days=365)
-
-            train_df = symbol_df[
-                (symbol_df["date"] >= training_start_date)
-                & (symbol_df["date"] <= training_end_date)
-            ].copy()
-
-            test_row = symbol_df[symbol_df["date"] == test_date].copy()
-
-            if test_row.empty:
-                print("    Skipped: empty test row.", flush=True)
-                continue
-            
-            test_row_index = test_row.index[0]
-            
-            if test_row_index == 0:
-                print("    Skipped: no previous trading day available.", flush=True)
-                continue
-            
-            previous_row = symbol_df.iloc[test_row_index - 1]
-            
-            previous_trading_date = previous_row["date"].date()
-            previous_close_before_test_start = float(previous_row["close"])
-
-            if test_row[feature_cols].isna().any(axis=None):
-                print("    Skipped: test row has missing feature values.", flush=True)
-                continue
-
             output_row = {
                 "run_timestamp": RUN_TIMESTAMP,
-                "model_name": MODEL_NAME,
                 "backtest_name": model_params["backtest_name"],
+                "model_name": MODEL_NAME,
+                "feature_1": None,
+                "feature_2": None,
+                "feature_3": None,
+                "feature_4": None,
+                "feature_5": None,
                 "n_estimators": model_params["n_estimators"],
                 "max_depth": model_params["max_depth"],
                 "min_samples_leaf": model_params["min_samples_leaf"],
-                "max_features": model_params.get("max_features", 1.0),
                 "random_state": model_params["random_state"],
                 "symbol": symbol,
                 "training_start_date": training_start_date.date(),
                 "training_end_date": training_end_date.date(),
                 "test_start_date": test_date.date(),
-                "previous_trading_date": previous_trading_date,
-                "previous_close_before_test_start": previous_close_before_test_start,
-                "test_start_close": float(test_row.iloc[0]["close"]),
                 "test_end_date": None,
+                "previous_trading_date": previous_trading_date.date(),
+                "previous_close_before_test_start": previous_close_before_test_start,
             }
 
+            return_predictions = []
+            actual_returns = []
+            actual_closes = []
+            confidence_no_loss_values = []
+            loss_probability_values = []
+            pred_positive_counts = []
+            pred_positive_actual_positive_counts = []
+            feature_importance_arrays = []
             max_test_end_date = None
 
+            row_is_complete = True
+
             for horizon in HORIZONS:
-                actual_col = f"actual_{horizon}d"
+                target_return_col = f"target_return_{horizon}d"
+                actual_close_col = f"actual_{horizon}d_close"
+                actual_date_col = f"actual_{horizon}d_date"
 
-                if pd.isna(test_row.iloc[0][actual_col]):
-                    print(f"    Skipped horizon {horizon}d: no actual available.", flush=True)
-                    continue
+                actual_close = previous_row.iloc[0][actual_close_col]
+                actual_end_date = previous_row.iloc[0][actual_date_col]
 
-                price_model, loss_model = train_models(
+                if pd.isna(actual_close) or pd.isna(actual_end_date):
+                    print(
+                        f"    Skipped row: no actual available for {horizon}d.",
+                        flush=True,
+                    )
+                    row_is_complete = False
+                    break
+
+                train_df = get_leak_safe_training_df(
+                    symbol_df=symbol_df,
+                    training_start_date=training_start_date,
+                    prediction_feature_date=previous_trading_date,
+                    horizon=horizon,
+                )
+
+                return_model, loss_model = train_models(
                     train_df=train_df,
                     feature_cols=feature_cols,
                     horizon=horizon,
                     model_params=model_params,
                 )
 
-                if price_model is None:
-                    print(f"    Skipped horizon {horizon}d: not enough training rows.", flush=True)
-                    continue
+                if return_model is None:
+                    print(
+                        f"    Skipped row: not enough training rows for {horizon}d.",
+                        flush=True,
+                    )
+                    row_is_complete = False
+                    break
 
-                prediction, confidence_no_loss, loss_probability = predict_one_row(
-                    price_model=price_model,
+                return_pct_pred, confidence_no_loss, loss_probability = predict_one_row(
+                    return_model=return_model,
                     loss_model=loss_model,
-                    row=test_row,
+                    row=previous_row,
                     feature_cols=feature_cols,
                 )
 
-                actual = float(test_row.iloc[0][actual_col])
-                current_close = float(test_row.iloc[0]["close"])
+                actual_close = float(actual_close)
 
-                actual_minus_prediction = actual - prediction
-                prediction_too_high = int(actual_minus_prediction < 0)
+                # Actual return is explicitly based on previous_close_before_test_start.
+                return_pct_actual = (
+                    actual_close / previous_close_before_test_start
+                ) - 1
 
-                future_row_index = test_row.index[0] + horizon
+                count_pred_positive = int(return_pct_pred > 0)
+                count_pred_positive_w_actual_positive = int(
+                    return_pct_pred > 0 and return_pct_actual > 0
+                )
 
-                if future_row_index < len(symbol_df):
-                    horizon_end_date = symbol_df.iloc[future_row_index]["date"].date()
+                buy_profit_pct = safe_divide(
+                    count_pred_positive_w_actual_positive,
+                    count_pred_positive,
+                )
 
-                    if max_test_end_date is None:
-                        max_test_end_date = horizon_end_date
-                    else:
-                        max_test_end_date = max(max_test_end_date, horizon_end_date)
-
-                output_row[f"{horizon}d_prediction"] = prediction
-                output_row[f"{horizon}d_actual"] = actual
-                output_row[f"{horizon}d_actual_minus_prediction"] = actual_minus_prediction
-                output_row[f"{horizon}d_prediction_too_high"] = prediction_too_high
+                output_row[f"{horizon}d_return_pct_pred"] = return_pct_pred
+                output_row[f"{horizon}d_return_pct_actual"] = return_pct_actual
+                output_row[f"{horizon}d_close_actual"] = actual_close
                 output_row[f"{horizon}d_confidence_no_loss"] = confidence_no_loss
                 output_row[f"{horizon}d_loss_probability"] = loss_probability
-                output_row[f"{horizon}d_current_close"] = current_close
+                output_row[f"{horizon}d_count_pred_positive"] = count_pred_positive
+                output_row[
+                    f"{horizon}d_count_pred_positive_w_actual_positive"
+                ] = count_pred_positive_w_actual_positive
+                output_row[f"{horizon}d_buy_profit_pct"] = buy_profit_pct
 
-            output_row["test_end_date"] = max_test_end_date
+                return_predictions.append(return_pct_pred)
+                actual_returns.append(return_pct_actual)
+                actual_closes.append(actual_close)
+                confidence_no_loss_values.append(confidence_no_loss)
+                loss_probability_values.append(loss_probability)
+                pred_positive_counts.append(count_pred_positive)
+                pred_positive_actual_positive_counts.append(
+                    count_pred_positive_w_actual_positive
+                )
 
-            required_prediction_cols = [f"{h}d_prediction" for h in HORIZONS]
-            required_residual_cols = [f"{h}d_actual_minus_prediction" for h in HORIZONS]
-            required_too_high_cols = [f"{h}d_prediction_too_high" for h in HORIZONS]
-            
-            if all(col in output_row for col in required_prediction_cols):
-                # ------------------------------------------------------------
-                # Row-level summary metrics across 5d, 7d, 14d, and 28d
-                # ------------------------------------------------------------
-            
-                actual_minus_prediction_values = [
-                    output_row[col]
-                    for col in required_residual_cols
-                    if col in output_row and pd.notna(output_row[col])
-                ]
-            
-                pred_too_high_values = [
-                    output_row[col]
-                    for col in required_too_high_cols
-                    if col in output_row and pd.notna(output_row[col])
-                ]
-            
-                # Average of:
-                # 5d_actual_minus_prediction,
-                # 7d_actual_minus_prediction,
-                # 14d_actual_minus_prediction,
-                # 28d_actual_minus_prediction
-                output_row["average_actual_minus_prediction"] = (
-                    float(np.mean(actual_minus_prediction_values))
-                    if actual_minus_prediction_values
-                    else np.nan
-                )
-            
-                # Sum of:
-                # 5d_prediction_too_high,
-                # 7d_prediction_too_high,
-                # 14d_prediction_too_high,
-                # 28d_prediction_too_high
-                output_row["total_pred_too_high"] = (
-                    int(np.sum(pred_too_high_values))
-                    if pred_too_high_values
-                    else np.nan
-                )
-            
-                # Horizon-level too-high rates.
-                # At row level these are equivalent to 0/1 flags,
-                # but they make pivoting easier later.
-                for horizon in HORIZONS:
-                    too_high_col = f"{horizon}d_prediction_too_high"
-                    rate_col = f"{horizon}d_pred_too_high_rate"
-            
-                    output_row[rate_col] = (
-                        float(output_row[too_high_col])
-                        if too_high_col in output_row and pd.notna(output_row[too_high_col])
-                        else np.nan
-                    )
-            
-                # Total rate across all horizons.
-                # Example:
-                # total_pred_too_high = 2
-                # total_pred_too_high_rate = 2 / 4 = 0.50
-                output_row["total_pred_too_high_rate"] = (
-                    float(output_row["total_pred_too_high"] / len(HORIZONS))
-                    if pd.notna(output_row["total_pred_too_high"])
-                    else np.nan
-                )
-            
-                results.append(output_row)
-                append_row_to_csv(output_row, output_path)
-            
-                print(
-                    f"    Appended result | "
-                    f"{model_params['backtest_name']} | "
-                    f"{symbol} | "
-                    f"{test_date.date()} | "
-                    f"avg_actual_minus_pred={output_row['average_actual_minus_prediction']:.4f} | "
-                    f"total_pred_too_high={output_row['total_pred_too_high']} | "
-                    f"total_pred_too_high_rate={output_row['total_pred_too_high_rate']:.2%}",
-                    flush=True,
-                )
-            else:
-                print("    Skipped row: not all horizons produced predictions.", flush=True)
+                feature_importance_arrays.append(return_model.feature_importances_)
+
+                actual_end_date = pd.to_datetime(actual_end_date)
+
+                if max_test_end_date is None:
+                    max_test_end_date = actual_end_date
+                else:
+                    max_test_end_date = max(max_test_end_date, actual_end_date)
+
+            if not row_is_complete:
+                continue
+
+            # ------------------------------------------------------------
+            # Top 5 features, aggregated across horizon return models
+            # ------------------------------------------------------------
+            top_features = get_top_features_from_importances(
+                feature_cols=feature_cols,
+                importance_arrays=feature_importance_arrays,
+                top_n=5,
+            )
+
+            output_row["feature_1"] = top_features[0]
+            output_row["feature_2"] = top_features[1]
+            output_row["feature_3"] = top_features[2]
+            output_row["feature_4"] = top_features[3]
+            output_row["feature_5"] = top_features[4]
+
+            # ------------------------------------------------------------
+            # Average / total summary columns
+            # ------------------------------------------------------------
+            output_row["test_end_date"] = max_test_end_date.date()
+
+            output_row["average_return_pct_pred"] = float(np.mean(return_predictions))
+            output_row["average_return_pct_actual"] = float(np.mean(actual_returns))
+            output_row["average_close_actual"] = float(np.mean(actual_closes))
+            output_row["average_confidence_no_loss"] = float(
+                np.mean(confidence_no_loss_values)
+            )
+            output_row["average_loss_probability"] = float(
+                np.mean(loss_probability_values)
+            )
+
+            output_row["sum_count_pred_positive"] = int(np.sum(pred_positive_counts))
+            output_row["sum_count_pred_positive_w_actual_positive"] = int(
+                np.sum(pred_positive_actual_positive_counts)
+            )
+
+            output_row["overall_buy_profit_pct"] = safe_divide(
+                output_row["sum_count_pred_positive_w_actual_positive"],
+                output_row["sum_count_pred_positive"],
+            )
+
+            ordered_row = build_ordered_output_row(output_row)
+
+            results.append(ordered_row)
+            append_row_to_csv(ordered_row, output_path)
+
+            print(
+                f"    Appended result | "
+                f"{model_params['backtest_name']} | "
+                f"{symbol} | "
+                f"test_start={test_date.date()} | "
+                f"prev_close={previous_close_before_test_start:.4f} | "
+                f"avg_pred_return={output_row['average_return_pct_pred']:.2%} | "
+                f"avg_actual_return={output_row['average_return_pct_actual']:.2%} | "
+                f"overall_buy_profit_pct={output_row['overall_buy_profit_pct']}",
+                flush=True,
+            )
 
     backtest_results = pd.DataFrame(results)
 
@@ -783,8 +928,9 @@ def run_backtest(features, model_params, output_path):
 def run_backtest_grid(features):
     """
     Runs the backtest once per hyperparameter combination.
-    Appends each individual result row to the CSV as it goes.
+    Starts from a clean backtest output file.
     """
+    reset_output_file(BACKTEST_OUTPUT_PATH)
 
     parameter_grid = PARAMETER_GRID
 
@@ -828,9 +974,8 @@ def run_backtest_grid(features):
 
 def summarise_backtest(backtest_results):
     """
-    Prints simple backtest diagnostics by backtest_name, symbol, and horizon.
+    Prints simple diagnostics by backtest_name, symbol, and horizon.
     """
-
     if backtest_results.empty:
         return
 
@@ -850,13 +995,9 @@ def summarise_backtest(backtest_results):
             print(f"  Symbol: {symbol}", flush=True)
 
             for horizon in HORIZONS:
-                pred_col = f"{horizon}d_prediction"
-                actual_col = f"{horizon}d_actual"
-                residual_col = f"{horizon}d_actual_minus_prediction"
-                bad_col = f"{horizon}d_prediction_too_high"
-
-                if pred_col not in symbol_df.columns:
-                    continue
+                pred_col = f"{horizon}d_return_pct_pred"
+                actual_col = f"{horizon}d_return_pct_actual"
+                buy_col = f"{horizon}d_buy_profit_pct"
 
                 valid = symbol_df.dropna(subset=[pred_col, actual_col])
 
@@ -865,15 +1006,27 @@ def summarise_backtest(backtest_results):
 
                 mae = mean_absolute_error(valid[actual_col], valid[pred_col])
                 rmse = np.sqrt(mean_squared_error(valid[actual_col], valid[pred_col]))
-                pct_actual_above_prediction = 1 - valid[bad_col].mean()
-                avg_residual = valid[residual_col].mean()
+
+                pred_positive_count = valid[f"{horizon}d_count_pred_positive"].sum()
+                pred_positive_actual_positive_count = valid[
+                    f"{horizon}d_count_pred_positive_w_actual_positive"
+                ].sum()
+
+                buy_profit_pct = safe_divide(
+                    pred_positive_actual_positive_count,
+                    pred_positive_count,
+                )
+
+                avg_pred = valid[pred_col].mean()
+                avg_actual = valid[actual_col].mean()
 
                 print(
                     f"    {horizon}d | "
-                    f"MAE={mae:.4f} | "
-                    f"RMSE={rmse:.4f} | "
-                    f"% actual >= prediction={pct_actual_above_prediction:.2%} | "
-                    f"avg actual-prediction={avg_residual:.4f}",
+                    f"MAE={mae:.4%} | "
+                    f"RMSE={rmse:.4%} | "
+                    f"avg_pred={avg_pred:.2%} | "
+                    f"avg_actual={avg_actual:.2%} | "
+                    f"buy_profit_pct={buy_profit_pct}",
                     flush=True,
                 )
 
@@ -887,17 +1040,20 @@ def run_production_forecast(features):
     Production forecast.
 
     For each symbol:
-    - Use the latest available trading day
-    - Train on trailing 12 months
-    - Predict 5, 7, 14, and 28 trading days ahead
+    - Uses latest available trading day row
+    - Predicts 3d, 5d, 7d, 9d return %
+    - Uses latest close as the base close
     """
-
     print("\nRunning production forecast...", flush=True)
 
     results = []
 
     features = features.copy()
     features["date"] = pd.to_datetime(features["date"])
+    for horizon in HORIZONS:
+        features[f"actual_{horizon}d_date"] = pd.to_datetime(
+            features[f"actual_{horizon}d_date"]
+        )
 
     feature_cols = get_feature_columns(features)
 
@@ -921,14 +1077,11 @@ def run_production_forecast(features):
             print(f"  Skipped {symbol}: no valid latest row.", flush=True)
             continue
 
-        latest_date = latest_row.iloc[0]["date"]
-        training_end_date = latest_date - timedelta(days=1)
-        training_start_date = latest_date - timedelta(days=365)
+        latest_date = pd.to_datetime(latest_row.iloc[0]["date"])
+        latest_close = float(latest_row.iloc[0]["close"])
 
-        train_df = symbol_df[
-            (symbol_df["date"] >= training_start_date)
-            & (symbol_df["date"] <= training_end_date)
-        ].copy()
+        training_end_date = latest_date
+        training_start_date = latest_date - timedelta(days=365)
 
         output_row = {
             "forecast_date": forecast_date,
@@ -936,9 +1089,7 @@ def run_production_forecast(features):
             "data_as_of_date": latest_date.date(),
             "stock_symbol": symbol,
             "stock_start_value": float(latest_row.iloc[0]["open"]),
-            "stock_end_value": float(latest_row.iloc[0]["close"]),
-            "training_start_date": training_start_date.date(),
-            "training_end_date": training_end_date.date(),
+            "stock_end_value": latest_close,
             "production_model_name": model_params["backtest_name"],
             "n_estimators": model_params["n_estimators"],
             "max_depth": model_params["max_depth"],
@@ -947,27 +1098,38 @@ def run_production_forecast(features):
         }
 
         for horizon in HORIZONS:
-            price_model, loss_model = train_models(
+            train_df = get_leak_safe_training_df(
+                symbol_df=symbol_df,
+                training_start_date=training_start_date,
+                prediction_feature_date=latest_date,
+                horizon=horizon,
+            )
+
+            return_model, loss_model = train_models(
                 train_df=train_df,
                 feature_cols=feature_cols,
                 horizon=horizon,
                 model_params=model_params,
             )
 
-            if price_model is None:
-                output_row[f"{horizon}d_prediction"] = np.nan
+            if return_model is None:
+                output_row[f"{horizon}d_return_pct_pred"] = np.nan
+                output_row[f"{horizon}d_close_pred"] = np.nan
                 output_row[f"{horizon}d_confidence_no_loss"] = np.nan
                 output_row[f"{horizon}d_loss_probability"] = np.nan
                 continue
 
-            prediction, confidence_no_loss, loss_probability = predict_one_row(
-                price_model=price_model,
+            return_pct_pred, confidence_no_loss, loss_probability = predict_one_row(
+                return_model=return_model,
                 loss_model=loss_model,
                 row=latest_row,
                 feature_cols=feature_cols,
             )
 
-            output_row[f"{horizon}d_prediction"] = prediction
+            close_pred = latest_close * (1 + return_pct_pred)
+
+            output_row[f"{horizon}d_return_pct_pred"] = return_pct_pred
+            output_row[f"{horizon}d_close_pred"] = close_pred
             output_row[f"{horizon}d_confidence_no_loss"] = confidence_no_loss
             output_row[f"{horizon}d_loss_probability"] = loss_probability
 
@@ -975,7 +1137,10 @@ def run_production_forecast(features):
 
     production_forecast = pd.DataFrame(results)
 
+    production_forecast.to_csv(PRODUCTION_OUTPUT_PATH, index=False)
+
     print(f"Production forecast created {len(production_forecast):,} rows.", flush=True)
+    print(f"Saved production forecast to: {PRODUCTION_OUTPUT_PATH}", flush=True)
 
     return production_forecast
 
@@ -995,11 +1160,10 @@ def main():
     backtest_results = run_backtest_grid(features)
     summarise_backtest(backtest_results)
 
-    production_forecast = run_production_forecast(features)
-    production_forecast.to_csv(PRODUCTION_OUTPUT_PATH, index=False)
+    run_production_forecast(features)
 
-    print(f"\nSaved backtest results to: {BACKTEST_OUTPUT_PATH}", flush=True)
-    print(f"Saved production forecast to: {PRODUCTION_OUTPUT_PATH}", flush=True)
+    print(f"\nSaved backtest results to: {BACKTEST_OUTPUT_PATH}")
+    print(f"Saved production forecast to: {PRODUCTION_OUTPUT_PATH}")
 
 
 if __name__ == "__main__":
