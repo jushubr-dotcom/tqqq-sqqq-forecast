@@ -31,8 +31,8 @@ BACKTEST_START_DATE = "2026-01-01"
 BACKTEST_END_DATE = "2026-05-31"
 
 OUTPUT_DIR = "outputs"
-BACKTEST_OUTPUT_PATH = os.path.join(OUTPUT_DIR, "backtest_results_extratrees.csv")
-PRODUCTION_OUTPUT_PATH = os.path.join(OUTPUT_DIR, "production_forecast_extratrees.csv")
+BACKTEST_OUTPUT_PATH = os.path.join(OUTPUT_DIR, "backtest_results.csv")
+PRODUCTION_OUTPUT_PATH = os.path.join(OUTPUT_DIR, "production_forecast.csv")
 
 SMOKE_TEST = os.getenv("SMOKE_TEST", "false").lower() == "true"
 SMOKE_TEST_DAYS_PER_SYMBOL = int(os.getenv("SMOKE_TEST_DAYS_PER_SYMBOL", "10"))
@@ -123,21 +123,42 @@ def ensure_output_dir():
     os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 
-def reset_output_file(output_path):
-    if os.path.exists(output_path):
-        os.remove(output_path)
-        print(f"Deleted old output file: {output_path}", flush=True)
-
-
 def append_row_to_csv(row, output_path):
+    """
+    Appends one row to CSV while preserving historical rows.
+
+    If the existing CSV is missing new columns, this function rewrites the file
+    with the expanded schema and keeps all previous rows.
+    """
+
     row_df = pd.DataFrame([row])
 
     if not os.path.exists(output_path):
         row_df.to_csv(output_path, mode="w", header=True, index=False)
-    else:
-        row_df.to_csv(output_path, mode="a", header=False, index=False)
+        return
 
+    existing_df = pd.read_csv(output_path)
 
+    all_columns = list(existing_df.columns)
+
+    for col in row_df.columns:
+        if col not in all_columns:
+            all_columns.append(col)
+
+    for col in all_columns:
+        if col not in existing_df.columns:
+            existing_df[col] = np.nan
+
+        if col not in row_df.columns:
+            row_df[col] = np.nan
+
+    existing_df = existing_df[all_columns]
+    row_df = row_df[all_columns]
+
+    combined_df = pd.concat([existing_df, row_df], ignore_index=True)
+
+    combined_df.to_csv(output_path, mode="w", header=True, index=False)
+    
 def safe_divide(numerator, denominator):
     if denominator is None or pd.isna(denominator) or denominator == 0:
         return np.nan
@@ -842,8 +863,6 @@ def run_backtest(features, model_params, output_path):
 
 
 def run_backtest_grid(features):
-    reset_output_file(BACKTEST_OUTPUT_PATH)
-
     parameter_grid = PARAMETER_GRID
 
     if SMOKE_TEST:
@@ -1037,7 +1056,8 @@ def run_production_forecast(features):
 
     production_forecast = pd.DataFrame(results)
 
-    production_forecast.to_csv(PRODUCTION_OUTPUT_PATH, index=False)
+    for _, row in production_forecast.iterrows():
+        append_row_to_csv(row.to_dict(), PRODUCTION_OUTPUT_PATH)
 
     print(f"Production forecast created {len(production_forecast):,} rows.", flush=True)
     print(f"Saved production forecast to: {PRODUCTION_OUTPUT_PATH}", flush=True)
