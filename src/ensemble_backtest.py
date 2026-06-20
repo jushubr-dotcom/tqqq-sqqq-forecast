@@ -81,11 +81,36 @@ def get_best_backtest_per_model(df):
     )
 
     # Avoid selecting a model variant that only made a tiny number of buy calls.
-    summary = summary[summary["total_pred_positive"] >= 30].copy()
+    MIN_POSITIVE_PREDICTIONS = int(os.getenv("MIN_POSITIVE_PREDICTIONS", "30"))
 
+    summary = summary[summary["total_pred_positive"] >= MIN_POSITIVE_PREDICTIONS].copy()
+    
     if summary.empty:
-        raise ValueError(
-            "No model/backtest combinations passed the minimum positive prediction filter."
+        print(
+            f"No model/backtest combinations passed MIN_POSITIVE_PREDICTIONS="
+            f"{MIN_POSITIVE_PREDICTIONS}. Falling back to best available combinations."
+        )
+    
+        summary = (
+            df.groupby(["model_name", "backtest_name"], dropna=False)
+            .agg(
+                avg_overall_buy_profit_pct=("overall_buy_profit_pct", "mean"),
+                total_pred_positive=("sum_count_pred_positive", "sum"),
+                total_pred_positive_actual_positive=(
+                    "sum_count_pred_positive_w_actual_positive",
+                    "sum",
+                ),
+                row_count=("symbol", "size"),
+            )
+            .reset_index()
+        )
+    
+        summary["true_overall_buy_profit_pct"] = summary.apply(
+            lambda r: safe_divide(
+                r["total_pred_positive_actual_positive"],
+                r["total_pred_positive"],
+            ),
+            axis=1,
         )
 
     summary = summary.sort_values(
@@ -298,7 +323,7 @@ def main():
     if not os.path.exists(BACKTEST_INPUT_PATH):
         raise FileNotFoundError(f"Missing input file: {BACKTEST_INPUT_PATH}")
 
-    df = pd.read_csv(BACKTEST_INPUT_PATH)
+    df = pd.read_csv(BACKTEST_INPUT_PATH, low_memory=False)
 
     df = df[df["model_name"].isin(MODEL_NAMES_TO_INCLUDE)].copy()
 
