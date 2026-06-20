@@ -20,6 +20,7 @@ jobs:
       SMOKE_TEST: "true"
       SMOKE_TEST_DAYS_PER_SYMBOL: "3"
       SMOKE_TEST_PARAMETER_COUNT: "1"
+      MIN_POSITIVE_PREDICTIONS: "1"
 
     steps:
       - name: Checkout repository
