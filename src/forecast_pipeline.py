@@ -120,27 +120,41 @@ PRODUCTION_MODEL_PARAMS = PARAMETER_GRID[-1]
 def ensure_output_dir():
     os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-
-def reset_output_file(output_path):
-    """
-    Deletes the old backtest file so the new schema starts clean.
-    """
-    if os.path.exists(output_path):
-        os.remove(output_path)
-        print(f"Deleted old output file: {output_path}", flush=True)
-
-
 def append_row_to_csv(row, output_path):
     """
-    Appends one row to CSV.
-    This assumes we are starting from a clean file for this new schema.
+    Appends one row to CSV while preserving historical rows.
+
+    If the existing CSV is missing new columns, this function rewrites the file
+    with the expanded schema and keeps all previous rows.
     """
+
     row_df = pd.DataFrame([row])
 
     if not os.path.exists(output_path):
         row_df.to_csv(output_path, mode="w", header=True, index=False)
-    else:
-        row_df.to_csv(output_path, mode="a", header=False, index=False)
+        return
+
+    existing_df = pd.read_csv(output_path)
+
+    all_columns = list(existing_df.columns)
+
+    for col in row_df.columns:
+        if col not in all_columns:
+            all_columns.append(col)
+
+    for col in all_columns:
+        if col not in existing_df.columns:
+            existing_df[col] = np.nan
+
+        if col not in row_df.columns:
+            row_df[col] = np.nan
+
+    existing_df = existing_df[all_columns]
+    row_df = row_df[all_columns]
+
+    combined_df = pd.concat([existing_df, row_df], ignore_index=True)
+
+    combined_df.to_csv(output_path, mode="w", header=True, index=False)
 
 
 def safe_divide(numerator, denominator):
@@ -930,7 +944,6 @@ def run_backtest_grid(features):
     Runs the backtest once per hyperparameter combination.
     Starts from a clean backtest output file.
     """
-    reset_output_file(BACKTEST_OUTPUT_PATH)
 
     parameter_grid = PARAMETER_GRID
 
@@ -1137,7 +1150,8 @@ def run_production_forecast(features):
 
     production_forecast = pd.DataFrame(results)
 
-    production_forecast.to_csv(PRODUCTION_OUTPUT_PATH, index=False)
+    for _, row in production_forecast.iterrows():
+        append_row_to_csv(row.to_dict(), PRODUCTION_OUTPUT_PATH)
 
     print(f"Production forecast created {len(production_forecast):,} rows.", flush=True)
     print(f"Saved production forecast to: {PRODUCTION_OUTPUT_PATH}", flush=True)
