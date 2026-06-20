@@ -41,53 +41,53 @@ jobs:
 
       - name: Run Random Forest smoke test
         run: |
-          python forecast_pipeline_randomforest.py
+          python src/forecast_pipeline_randomforest.py
         env:
           MODEL_NAME: RandomForest
 
       - name: Run Extra Trees smoke test
         run: |
-          python forecast_pipeline_extratrees.py
+          python src/forecast_pipeline_extratrees.py
         env:
           MODEL_NAME: ExtraTrees
 
       - name: Run XGBoost smoke test
         run: |
-          python forecast_pipeline_xgboost.py
+          python src/forecast_pipeline_xgboost.py
         env:
           MODEL_NAME: XGBoost
 
       - name: Run LightGBM smoke test
         run: |
-          python forecast_pipeline_lightgbm.py
+          python src/forecast_pipeline_lightgbm.py
         env:
           MODEL_NAME: LightGBM
 
       - name: Run CatBoost smoke test
         run: |
-          python forecast_pipeline_catboost.py
+          python src/forecast_pipeline_catboost.py
         env:
           MODEL_NAME: CatBoost
 
       - name: Run Ridge smoke test
         run: |
-          python forecast_pipeline_ridgeregression.py
+          python src/forecast_pipeline_ridgeregression.py
         env:
           MODEL_NAME: Ridge
 
       - name: Run ElasticNet smoke test
         run: |
-          python forecast_pipeline_elasticnetlogreg.py
+          python src/forecast_pipeline_elasticnetlogreg.py
         env:
           MODEL_NAME: ElasticNet
 
       - name: Run ensemble backtest
         run: |
-          python ensemble_backtest.py
+          python src/ensemble_backtest.py
 
       - name: Run ensemble production forecast
         run: |
-          python ensemble_production.py
+          python src/ensemble_production.py
 
       - name: Show output files
         run: |
