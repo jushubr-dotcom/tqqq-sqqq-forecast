@@ -30,7 +30,7 @@ LAG_DAYS = list(range(1, 53))
 # New cumulative return features requested
 RETURN_WINDOWS = [5, 7, 10, 14, 20]
 
-BACKTEST_START_DATE = "2026-01-01"
+BACKTEST_START_DATE = "2026-04-01"
 BACKTEST_END_DATE = "2026-05-31"
 
 OUTPUT_DIR = "outputs"
@@ -57,54 +57,6 @@ PARAMETER_GRID = [
         "n_estimators": 100,
         "max_depth": 8,
         "min_samples_leaf": 1,
-        "max_features": "log2",
-        "random_state": 42,
-    },
-    {
-        "backtest_name": "rf_100trees_depth8_leaf2_sqrt",
-        "n_estimators": 100,
-        "max_depth": 8,
-        "min_samples_leaf": 2,
-        "max_features": "sqrt",
-        "random_state": 42,
-    },
-    {
-        "backtest_name": "rf_100trees_depth8_leaf2_log2",
-        "n_estimators": 100,
-        "max_depth": 8,
-        "min_samples_leaf": 2,
-        "max_features": "log2",
-        "random_state": 42,
-    },
-    {
-        "backtest_name": "rf_100trees_depth10_leaf1_sqrt",
-        "n_estimators": 100,
-        "max_depth": 10,
-        "min_samples_leaf": 1,
-        "max_features": "sqrt",
-        "random_state": 42,
-    },
-    {
-        "backtest_name": "rf_100trees_depth10_leaf1_log2",
-        "n_estimators": 100,
-        "max_depth": 10,
-        "min_samples_leaf": 1,
-        "max_features": "log2",
-        "random_state": 42,
-    },
-    {
-        "backtest_name": "rf_100trees_depth10_leaf2_sqrt",
-        "n_estimators": 100,
-        "max_depth": 10,
-        "min_samples_leaf": 2,
-        "max_features": "sqrt",
-        "random_state": 42,
-    },
-    {
-        "backtest_name": "rf_100trees_depth10_leaf2_log2",
-        "n_estimators": 100,
-        "max_depth": 10,
-        "min_samples_leaf": 2,
         "max_features": "log2",
         "random_state": 42,
     },
