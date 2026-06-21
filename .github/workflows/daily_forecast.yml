@@ -2,23 +2,42 @@ name: Daily Forecast Full Backtest
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - main
-  schedule:
-    # Runs daily at 7am UTC
-    - cron: "0 7 * * *"
+    inputs:
+      model:
+        description: "Model to run"
+        required: true
+        default: "xgboost"
+        type: choice
+        options:
+          - randomforest
+          - extratrees
+          - xgboost
+          - lightgbm
+          - catboost
+          - ridge
+          - elasticnet
+          - ensemble
+      smoke_test:
+        description: "Run smoke test?"
+        required: true
+        default: "false"
+        type: choice
+        options:
+          - "true"
+          - "false"
 
 permissions:
   contents: write
 
 jobs:
-  smoke-test-all-models:
+  run-selected-model:
     runs-on: ubuntu-latest
 
     env:
-        SMOKE_TEST: "false"
-        MIN_POSITIVE_PREDICTIONS: "30"
+      SMOKE_TEST: ${{ github.event.inputs.smoke_test }}
+      SMOKE_TEST_DAYS_PER_SYMBOL: "3"
+      SMOKE_TEST_PARAMETER_COUNT: "1"
+      MIN_POSITIVE_PREDICTIONS: "30"
 
     steps:
       - name: Checkout repository
@@ -29,11 +48,6 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: List repo files
-        run: |
-          pwd
-          find . -maxdepth 3 -type f | sort
-
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
@@ -43,131 +57,48 @@ jobs:
         run: |
           mkdir -p outputs
 
-      - name: Run Random Forest smoke test
+      - name: Run selected model
         run: |
-          python src/forecast_pipeline_randomforest.py
-        env:
-          MODEL_NAME: RandomForest
+          MODEL="${{ github.event.inputs.model }}"
 
-      - name: Run Extra Trees smoke test
-        run: |
-          python src/forecast_pipeline_extratrees.py
-        env:
-          MODEL_NAME: ExtraTrees
-
-      - name: Run XGBoost smoke test
-        run: |
-          python src/forecast_pipeline_xgboost.py
-        env:
-          MODEL_NAME: XGBoost
-
-      - name: Run LightGBM smoke test
-        run: |
-          python src/forecast_pipeline_lightgbm.py
-        env:
-          MODEL_NAME: LightGBM
-
-      - name: Run CatBoost smoke test
-        run: |
-          python src/forecast_pipeline_catboost.py
-        env:
-          MODEL_NAME: CatBoost
-
-      - name: Run Ridge smoke test
-        run: |
-          python src/forecast_pipeline_ridgeregression.py
-        env:
-          MODEL_NAME: Ridge
-
-      - name: Run ElasticNet smoke test
-        run: |
-          python src/forecast_pipeline_elasticnetlogreg.py
-        env:
-          MODEL_NAME: ElasticNet
-
-      - name: Run ensemble backtest
-        run: |
-          python src/ensemble_backtest.py
-
-      - name: Run ensemble production forecast
-        run: |
-          python src/ensemble_production.py
+          if [ "$MODEL" = "randomforest" ]; then
+            MODEL_NAME=RandomForest python src/forecast_pipeline_randomforest.py
+          elif [ "$MODEL" = "extratrees" ]; then
+            MODEL_NAME=ExtraTrees python src/forecast_pipeline_extratrees.py
+          elif [ "$MODEL" = "xgboost" ]; then
+            MODEL_NAME=XGBoost python src/forecast_pipeline_xgboost.py
+          elif [ "$MODEL" = "lightgbm" ]; then
+            MODEL_NAME=LightGBM python src/forecast_pipeline_lightgbm.py
+          elif [ "$MODEL" = "catboost" ]; then
+            MODEL_NAME=CatBoost python src/forecast_pipeline_catboost.py
+          elif [ "$MODEL" = "ridge" ]; then
+            MODEL_NAME=Ridge python src/forecast_pipeline_ridgeregression.py
+          elif [ "$MODEL" = "elasticnet" ]; then
+            MODEL_NAME=ElasticNet python src/forecast_pipeline_elasticnetlogreg.py
+          elif [ "$MODEL" = "ensemble" ]; then
+            python src/ensemble_backtest.py
+            python src/ensemble_production.py
+          else
+            echo "Unknown model: $MODEL"
+            exit 1
+          fi
 
       - name: Show output files
         run: |
           echo "Outputs folder:"
           ls -lah outputs
 
-          echo ""
-          echo "Backtest rows:"
-          python - <<'PY'
-          import pandas as pd
-          from pathlib import Path
-
-          p = Path("outputs/backtest_results.csv")
-          if p.exists():
-              df = pd.read_csv(p)
-              print(df.shape)
-              print(df[["model_name", "backtest_name", "symbol"]].drop_duplicates().head(50))
-          else:
-              print("Missing outputs/backtest_results.csv")
-          PY
-
-          echo ""
-          echo "Production rows:"
-          python - <<'PY'
-          import pandas as pd
-          from pathlib import Path
-
-          p = Path("outputs/production_forecast.csv")
-          if p.exists():
-              df = pd.read_csv(p)
-              print(df.shape)
-              print(df[["model_name", "production_model_name", "stock_symbol"]].drop_duplicates().head(50))
-          else:
-              print("Missing outputs/production_forecast.csv")
-          PY
-
-          echo ""
-          echo "Ensemble backtest:"
-          python - <<'PY'
-          import pandas as pd
-          from pathlib import Path
-
-          p = Path("outputs/ensemble_backtest_results.csv")
-          if p.exists():
-              df = pd.read_csv(p)
-              print(df.shape)
-              print(df.head())
-          else:
-              print("Missing outputs/ensemble_backtest_results.csv")
-          PY
-
-          echo ""
-          echo "Ensemble production:"
-          python - <<'PY'
-          import pandas as pd
-          from pathlib import Path
-
-          p = Path("outputs/ensemble_production_forecast.csv")
-          if p.exists():
-              df = pd.read_csv(p)
-              print(df.shape)
-              print(df.head())
-          else:
-              print("Missing outputs/ensemble_production_forecast.csv")
-          PY
-
       - name: Commit updated outputs
         run: |
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
 
-          git add outputs/*.csv
+          git add outputs/*.csv || true
 
           if git diff --cached --quiet; then
             echo "No output changes to commit."
           else
-            git commit -m "Run daily forecast smoke test"
+            git commit -m "Run full backtest: ${{ github.event.inputs.model }}"
+            git pull --rebase
             git push
           fi
