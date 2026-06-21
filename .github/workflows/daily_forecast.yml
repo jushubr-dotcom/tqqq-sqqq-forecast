@@ -1,4 +1,4 @@
-name: Daily Forecast Smoke Test
+name: Daily Forecast Full Backtest
 
 on:
   workflow_dispatch:
@@ -17,10 +17,8 @@ jobs:
     runs-on: ubuntu-latest
 
     env:
-      SMOKE_TEST: "true"
-      SMOKE_TEST_DAYS_PER_SYMBOL: "3"
-      SMOKE_TEST_PARAMETER_COUNT: "1"
-      MIN_POSITIVE_PREDICTIONS: "1"
+        SMOKE_TEST: "false"
+        MIN_POSITIVE_PREDICTIONS: "30"
 
     steps:
       - name: Checkout repository
