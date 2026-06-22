@@ -53,70 +53,15 @@ MODEL_NAME = os.getenv("MODEL_NAME", "CatBoost")
 # ============================================================
 
 PARAMETER_GRID = [
-    {
-        "backtest_name": "cat_100trees_depth3_lr003_l2_3",
-        "iterations": 100,
-        "depth": 3,
-        "learning_rate": 0.03,
-        "l2_leaf_reg": 3,
-        "random_state": 42,
-    },
-    {
-        "backtest_name": "cat_100trees_depth3_lr005_l2_3",
-        "iterations": 100,
-        "depth": 3,
-        "learning_rate": 0.05,
-        "l2_leaf_reg": 3,
-        "random_state": 42,
-    },
-    {
-        "backtest_name": "cat_150trees_depth3_lr003_l2_3",
-        "iterations": 150,
-        "depth": 3,
-        "learning_rate": 0.03,
-        "l2_leaf_reg": 3,
-        "random_state": 42,
-    },
-    {
-        "backtest_name": "cat_150trees_depth4_lr003_l2_3",
-        "iterations": 150,
-        "depth": 4,
-        "learning_rate": 0.03,
-        "l2_leaf_reg": 3,
-        "random_state": 42,
-    },
-    {
-        "backtest_name": "cat_200trees_depth3_lr003_l2_5",
-        "iterations": 200,
-        "depth": 3,
-        "learning_rate": 0.03,
-        "l2_leaf_reg": 5,
-        "random_state": 42,
-    },
-    {
-        "backtest_name": "cat_200trees_depth4_lr003_l2_5",
-        "iterations": 200,
-        "depth": 4,
-        "learning_rate": 0.03,
-        "l2_leaf_reg": 5,
-        "random_state": 42,
-    },
-    {
-        "backtest_name": "cat_200trees_depth3_lr005_l2_5",
-        "iterations": 200,
-        "depth": 3,
-        "learning_rate": 0.05,
-        "l2_leaf_reg": 5,
-        "random_state": 42,
-    },
-    {
-        "backtest_name": "cat_200trees_depth4_lr005_l2_5",
-        "iterations": 200,
-        "depth": 4,
-        "learning_rate": 0.05,
-        "l2_leaf_reg": 5,
-        "random_state": 42,
-    },
+    {"backtest_name": "cat_50trees_depth2_lr003_l2_5_6m", "iterations": 50, "depth": 2, "learning_rate": 0.03, "l2_leaf_reg": 5, "random_state": 42},
+    {"backtest_name": "cat_75trees_depth2_lr003_l2_5_6m", "iterations": 75, "depth": 2, "learning_rate": 0.03, "l2_leaf_reg": 5, "random_state": 42},
+    {"backtest_name": "cat_100trees_depth2_lr003_l2_5_6m", "iterations": 100, "depth": 2, "learning_rate": 0.03, "l2_leaf_reg": 5, "random_state": 42},
+
+    {"backtest_name": "cat_100trees_depth2_lr004_l2_5_6m", "iterations": 100, "depth": 2, "learning_rate": 0.04, "l2_leaf_reg": 5, "random_state": 42},
+    {"backtest_name": "cat_100trees_depth2_lr003_l2_10_6m", "iterations": 100, "depth": 2, "learning_rate": 0.03, "l2_leaf_reg": 10, "random_state": 42},
+
+    {"backtest_name": "cat_100trees_depth3_lr003_l2_5_6m", "iterations": 100, "depth": 3, "learning_rate": 0.03, "l2_leaf_reg": 5, "random_state": 42},
+    {"backtest_name": "cat_150trees_depth2_lr003_l2_5_6m", "iterations": 150, "depth": 2, "learning_rate": 0.03, "l2_leaf_reg": 5, "random_state": 42},
 ]
 
 PRODUCTION_MODEL_PARAMS = PARAMETER_GRID[-1]
