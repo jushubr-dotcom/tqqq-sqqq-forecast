@@ -36,7 +36,7 @@ LAG_DAYS = list(range(1, 53))
 # New cumulative return features requested
 RETURN_WINDOWS = [5, 7, 10, 14, 20]
 
-BACKTEST_START_DATE = "2026-04-01"
+BACKTEST_START_DATE = "2026-01-01"
 BACKTEST_END_DATE = "2026-05-31"
 
 OUTPUT_DIR = "outputs"
@@ -50,22 +50,17 @@ SMOKE_TEST_PARAMETER_COUNT = int(os.getenv("SMOKE_TEST_PARAMETER_COUNT", "2"))
 MODEL_NAME = os.getenv("MODEL_NAME", "RandomForest")
 
 PARAMETER_GRID = [
-    {
-        "backtest_name": "rf_100trees_depth8_leaf1_sqrt",
-        "n_estimators": 100,
-        "max_depth": 8,
-        "min_samples_leaf": 1,
-        "max_features": "sqrt",
-        "random_state": 42,
-    },
-    {
-        "backtest_name": "rf_100trees_depth8_leaf1_log2",
-        "n_estimators": 100,
-        "max_depth": 8,
-        "min_samples_leaf": 1,
-        "max_features": "log2",
-        "random_state": 42,
-    },
+    {"backtest_name": "rf_100trees_depth4_leaf10_sqrt_6m", "n_estimators": 100, "max_depth": 4, "min_samples_leaf": 10, "max_features": "sqrt", "random_state": 42},
+    {"backtest_name": "rf_100trees_depth4_leaf15_sqrt_6m", "n_estimators": 100, "max_depth": 4, "min_samples_leaf": 15, "max_features": "sqrt", "random_state": 42},
+    {"backtest_name": "rf_100trees_depth4_leaf20_sqrt_6m", "n_estimators": 100, "max_depth": 4, "min_samples_leaf": 20, "max_features": "sqrt", "random_state": 42},
+
+    {"backtest_name": "rf_125trees_depth4_leaf20_sqrt_6m", "n_estimators": 125, "max_depth": 4, "min_samples_leaf": 20, "max_features": "sqrt", "random_state": 42},
+    {"backtest_name": "rf_150trees_depth4_leaf20_sqrt_6m", "n_estimators": 150, "max_depth": 4, "min_samples_leaf": 20, "max_features": "sqrt", "random_state": 42},
+
+    {"backtest_name": "rf_100trees_depth5_leaf20_sqrt_6m", "n_estimators": 100, "max_depth": 5, "min_samples_leaf": 20, "max_features": "sqrt", "random_state": 42},
+    {"backtest_name": "rf_100trees_depth6_leaf20_sqrt_6m", "n_estimators": 100, "max_depth": 6, "min_samples_leaf": 20, "max_features": "sqrt", "random_state": 42},
+
+    {"backtest_name": "rf_100trees_depth4_leaf20_log2_6m", "n_estimators": 100, "max_depth": 4, "min_samples_leaf": 20, "max_features": "log2", "random_state": 42},
 ]
 
 PRODUCTION_MODEL_PARAMS = PARAMETER_GRID[-1]
