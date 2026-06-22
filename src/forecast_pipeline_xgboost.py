@@ -37,7 +37,7 @@ LAG_DAYS = list(range(1, 53))
 # New cumulative return features requested
 RETURN_WINDOWS = [5, 7, 10, 14, 20]
 
-BACKTEST_START_DATE = "2026-04-01"
+BACKTEST_START_DATE = "2026-01-01"
 BACKTEST_END_DATE = "2026-05-31"
 
 OUTPUT_DIR = "outputs"
@@ -56,106 +56,18 @@ MODEL_NAME = os.getenv("MODEL_NAME", "XGBoost")
 # ============================================================
 
 PARAMETER_GRID = [
-    {
-        "backtest_name": "xgb_25trees_depth2_lr003_child5_sub08_col08",
-        "n_estimators": 25,
-        "max_depth": 2,
-        "learning_rate": 0.03,
-        "min_child_weight": 5,
-        "subsample": 0.8,
-        "colsample_bytree": 0.8,
-        "random_state": 42,
-    },
-    {
-        "backtest_name": "xgb_40trees_depth2_lr003_child5_sub08_col08",
-        "n_estimators": 40,
-        "max_depth": 2,
-        "learning_rate": 0.03,
-        "min_child_weight": 5,
-        "subsample": 0.8,
-        "colsample_bytree": 0.8,
-        "random_state": 42,
-    },
-    {
-        "backtest_name": "xgb_50trees_depth2_lr003_child5_sub08_col08",
-        "n_estimators": 50,
-        "max_depth": 2,
-        "learning_rate": 0.03,
-        "min_child_weight": 5,
-        "subsample": 0.8,
-        "colsample_bytree": 0.8,
-        "random_state": 42,
-    },
-    {
-        "backtest_name": "xgb_60trees_depth2_lr003_child5_sub08_col08",
-        "n_estimators": 60,
-        "max_depth": 2,
-        "learning_rate": 0.03,
-        "min_child_weight": 5,
-        "subsample": 0.8,
-        "colsample_bytree": 0.8,
-        "random_state": 42,
-    },
-    {
-        "backtest_name": "xgb_50trees_depth2_lr002_child5_sub08_col08",
-        "n_estimators": 50,
-        "max_depth": 2,
-        "learning_rate": 0.02,
-        "min_child_weight": 5,
-        "subsample": 0.8,
-        "colsample_bytree": 0.8,
-        "random_state": 42,
-    },
-    {
-        "backtest_name": "xgb_50trees_depth2_lr004_child5_sub08_col08",
-        "n_estimators": 50,
-        "max_depth": 2,
-        "learning_rate": 0.04,
-        "min_child_weight": 5,
-        "subsample": 0.8,
-        "colsample_bytree": 0.8,
-        "random_state": 42,
-    },
-    {
-        "backtest_name": "xgb_50trees_depth2_lr003_child3_sub08_col08",
-        "n_estimators": 50,
-        "max_depth": 2,
-        "learning_rate": 0.03,
-        "min_child_weight": 3,
-        "subsample": 0.8,
-        "colsample_bytree": 0.8,
-        "random_state": 42,
-    },
-    {
-        "backtest_name": "xgb_50trees_depth2_lr003_child7_sub08_col08",
-        "n_estimators": 50,
-        "max_depth": 2,
-        "learning_rate": 0.03,
-        "min_child_weight": 7,
-        "subsample": 0.8,
-        "colsample_bytree": 0.8,
-        "random_state": 42,
-    },
-    {
-        "backtest_name": "xgb_50trees_depth2_lr003_child5_sub07_col08",
-        "n_estimators": 50,
-        "max_depth": 2,
-        "learning_rate": 0.03,
-        "min_child_weight": 5,
-        "subsample": 0.7,
-        "colsample_bytree": 0.8,
-        "random_state": 42,
-    },
-    {
-        "backtest_name": "xgb_50trees_depth2_lr003_child5_sub08_col07",
-        "n_estimators": 50,
-        "max_depth": 2,
-        "learning_rate": 0.03,
-        "min_child_weight": 5,
-        "subsample": 0.8,
-        "colsample_bytree": 0.7,
-        "random_state": 42,
-    },
+    {"backtest_name": "xgb_25trees_depth2_lr003_child5_sub08_col08_6m", "n_estimators": 25, "max_depth": 2, "learning_rate": 0.03, "min_child_weight": 5, "subsample": 0.8, "colsample_bytree": 0.8, "random_state": 42},
+    {"backtest_name": "xgb_40trees_depth2_lr003_child5_sub08_col08_6m", "n_estimators": 40, "max_depth": 2, "learning_rate": 0.03, "min_child_weight": 5, "subsample": 0.8, "colsample_bytree": 0.8, "random_state": 42},
+    {"backtest_name": "xgb_50trees_depth2_lr003_child5_sub08_col08_6m", "n_estimators": 50, "max_depth": 2, "learning_rate": 0.03, "min_child_weight": 5, "subsample": 0.8, "colsample_bytree": 0.8, "random_state": 42},
+
+    {"backtest_name": "xgb_50trees_depth2_lr002_child5_sub08_col08_6m", "n_estimators": 50, "max_depth": 2, "learning_rate": 0.02, "min_child_weight": 5, "subsample": 0.8, "colsample_bytree": 0.8, "random_state": 42},
+    {"backtest_name": "xgb_50trees_depth2_lr004_child5_sub08_col08_6m", "n_estimators": 50, "max_depth": 2, "learning_rate": 0.04, "min_child_weight": 5, "subsample": 0.8, "colsample_bytree": 0.8, "random_state": 42},
+
+    {"backtest_name": "xgb_50trees_depth2_lr003_child3_sub08_col08_6m", "n_estimators": 50, "max_depth": 2, "learning_rate": 0.03, "min_child_weight": 3, "subsample": 0.8, "colsample_bytree": 0.8, "random_state": 42},
+    {"backtest_name": "xgb_50trees_depth2_lr003_child7_sub08_col08_6m", "n_estimators": 50, "max_depth": 2, "learning_rate": 0.03, "min_child_weight": 7, "subsample": 0.8, "colsample_bytree": 0.8, "random_state": 42},
+
+    {"backtest_name": "xgb_50trees_depth2_lr003_child5_sub07_col08_6m", "n_estimators": 50, "max_depth": 2, "learning_rate": 0.03, "min_child_weight": 5, "subsample": 0.7, "colsample_bytree": 0.8, "random_state": 42},
+    {"backtest_name": "xgb_50trees_depth2_lr003_child5_sub08_col07_6m", "n_estimators": 50, "max_depth": 2, "learning_rate": 0.03, "min_child_weight": 5, "subsample": 0.8, "colsample_bytree": 0.7, "random_state": 42},
 ]
 
 PRODUCTION_MODEL_PARAMS = PARAMETER_GRID[-1]
