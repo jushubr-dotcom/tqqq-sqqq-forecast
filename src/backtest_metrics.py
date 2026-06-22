@@ -26,6 +26,7 @@ def add_horizon_success_metrics(
         count_pred_positive == 1 and actual_positive == 1
     )
 
+    # Existing core buy metrics
     output_row[f"{horizon}d_count_pred_positive"] = count_pred_positive
     output_row[f"{horizon}d_count_pred_positive_w_actual_positive"] = (
         count_pred_positive_w_actual_positive
@@ -35,56 +36,121 @@ def add_horizon_success_metrics(
         count_pred_positive,
     )
 
-    output_row[f"{horizon}d_return_pct_model_on"] = (
-        return_pct_actual if count_pred_positive == 1 else np.nan
+    # Return model ON
+    output_row[f"{horizon}d_return_pct_model_on_numerator"] = (
+        return_pct_actual if count_pred_positive == 1 else 0.0
     )
-    output_row[f"{horizon}d_return_pct_model_off"] = return_pct_actual
+    output_row[f"{horizon}d_return_pct_model_on_denominator"] = count_pred_positive
+    output_row[f"{horizon}d_return_pct_model_on"] = safe_divide(
+        output_row[f"{horizon}d_return_pct_model_on_numerator"],
+        output_row[f"{horizon}d_return_pct_model_on_denominator"],
+    )
 
-    output_row[f"{horizon}d_profitable_model_on"] = (
-        count_pred_positive_w_actual_positive
-        if count_pred_positive == 1
-        else np.nan
+    # Return model OFF / baseline
+    output_row[f"{horizon}d_return_pct_model_off_numerator"] = return_pct_actual
+    output_row[f"{horizon}d_return_pct_model_off_denominator"] = 1
+    output_row[f"{horizon}d_return_pct_model_off"] = safe_divide(
+        output_row[f"{horizon}d_return_pct_model_off_numerator"],
+        output_row[f"{horizon}d_return_pct_model_off_denominator"],
     )
-    output_row[f"{horizon}d_profitable_model_off"] = actual_positive
+
+    # Profitable model ON
+    output_row[f"{horizon}d_profitable_model_on_numerator"] = (
+        count_pred_positive_w_actual_positive
+    )
+    output_row[f"{horizon}d_profitable_model_on_denominator"] = count_pred_positive
+    output_row[f"{horizon}d_profitable_model_on"] = safe_divide(
+        output_row[f"{horizon}d_profitable_model_on_numerator"],
+        output_row[f"{horizon}d_profitable_model_on_denominator"],
+    )
+
+    # Profitable model OFF / baseline
+    output_row[f"{horizon}d_profitable_model_off_numerator"] = actual_positive
+    output_row[f"{horizon}d_profitable_model_off_denominator"] = 1
+    output_row[f"{horizon}d_profitable_model_off"] = safe_divide(
+        output_row[f"{horizon}d_profitable_model_off_numerator"],
+        output_row[f"{horizon}d_profitable_model_off_denominator"],
+    )
 
     return output_row
 
 
 def add_average_success_metrics(output_row, horizons):
-    model_on_returns = []
-    model_off_returns = []
-    model_on_profitable = []
-    model_off_profitable = []
+    model_on_return_num = 0.0
+    model_on_return_den = 0
+
+    model_off_return_num = 0.0
+    model_off_return_den = 0
+
+    model_on_profitable_num = 0
+    model_on_profitable_den = 0
+
+    model_off_profitable_num = 0
+    model_off_profitable_den = 0
 
     for horizon in horizons:
-        on_return = output_row.get(f"{horizon}d_return_pct_model_on")
-        off_return = output_row.get(f"{horizon}d_return_pct_model_off")
-        on_profitable = output_row.get(f"{horizon}d_profitable_model_on")
-        off_profitable = output_row.get(f"{horizon}d_profitable_model_off")
+        model_on_return_num += output_row.get(
+            f"{horizon}d_return_pct_model_on_numerator",
+            0.0,
+        )
+        model_on_return_den += output_row.get(
+            f"{horizon}d_return_pct_model_on_denominator",
+            0,
+        )
 
-        if not pd.isna(on_return):
-            model_on_returns.append(on_return)
+        model_off_return_num += output_row.get(
+            f"{horizon}d_return_pct_model_off_numerator",
+            0.0,
+        )
+        model_off_return_den += output_row.get(
+            f"{horizon}d_return_pct_model_off_denominator",
+            0,
+        )
 
-        if not pd.isna(off_return):
-            model_off_returns.append(off_return)
+        model_on_profitable_num += output_row.get(
+            f"{horizon}d_profitable_model_on_numerator",
+            0,
+        )
+        model_on_profitable_den += output_row.get(
+            f"{horizon}d_profitable_model_on_denominator",
+            0,
+        )
 
-        if not pd.isna(on_profitable):
-            model_on_profitable.append(on_profitable)
+        model_off_profitable_num += output_row.get(
+            f"{horizon}d_profitable_model_off_numerator",
+            0,
+        )
+        model_off_profitable_den += output_row.get(
+            f"{horizon}d_profitable_model_off_denominator",
+            0,
+        )
 
-        if not pd.isna(off_profitable):
-            model_off_profitable.append(off_profitable)
-
-    output_row["average_return_pct_model_on"] = (
-        float(np.mean(model_on_returns)) if model_on_returns else np.nan
+    output_row["average_return_pct_model_on_numerator"] = model_on_return_num
+    output_row["average_return_pct_model_on_denominator"] = model_on_return_den
+    output_row["average_return_pct_model_on"] = safe_divide(
+        model_on_return_num,
+        model_on_return_den,
     )
-    output_row["average_return_pct_model_off"] = (
-        float(np.mean(model_off_returns)) if model_off_returns else np.nan
+
+    output_row["average_return_pct_model_off_numerator"] = model_off_return_num
+    output_row["average_return_pct_model_off_denominator"] = model_off_return_den
+    output_row["average_return_pct_model_off"] = safe_divide(
+        model_off_return_num,
+        model_off_return_den,
     )
-    output_row["average_profitable_model_on"] = (
-        float(np.mean(model_on_profitable)) if model_on_profitable else np.nan
+
+    output_row["average_profitable_model_on_numerator"] = model_on_profitable_num
+    output_row["average_profitable_model_on_denominator"] = model_on_profitable_den
+    output_row["average_profitable_model_on"] = safe_divide(
+        model_on_profitable_num,
+        model_on_profitable_den,
     )
-    output_row["average_profitable_model_off"] = (
-        float(np.mean(model_off_profitable)) if model_off_profitable else np.nan
+
+    output_row["average_profitable_model_off_numerator"] = model_off_profitable_num
+    output_row["average_profitable_model_off_denominator"] = model_off_profitable_den
+    output_row["average_profitable_model_off"] = safe_divide(
+        model_off_profitable_num,
+        model_off_profitable_den,
     )
 
     return output_row
@@ -95,16 +161,32 @@ def get_success_metric_columns(horizons):
 
     for horizon in horizons:
         cols += [
+            f"{horizon}d_return_pct_model_on_numerator",
+            f"{horizon}d_return_pct_model_on_denominator",
             f"{horizon}d_return_pct_model_on",
+            f"{horizon}d_return_pct_model_off_numerator",
+            f"{horizon}d_return_pct_model_off_denominator",
             f"{horizon}d_return_pct_model_off",
+            f"{horizon}d_profitable_model_on_numerator",
+            f"{horizon}d_profitable_model_on_denominator",
             f"{horizon}d_profitable_model_on",
+            f"{horizon}d_profitable_model_off_numerator",
+            f"{horizon}d_profitable_model_off_denominator",
             f"{horizon}d_profitable_model_off",
         ]
 
     cols += [
+        "average_return_pct_model_on_numerator",
+        "average_return_pct_model_on_denominator",
         "average_return_pct_model_on",
+        "average_return_pct_model_off_numerator",
+        "average_return_pct_model_off_denominator",
         "average_return_pct_model_off",
+        "average_profitable_model_on_numerator",
+        "average_profitable_model_on_denominator",
         "average_profitable_model_on",
+        "average_profitable_model_off_numerator",
+        "average_profitable_model_off_denominator",
         "average_profitable_model_off",
     ]
 
