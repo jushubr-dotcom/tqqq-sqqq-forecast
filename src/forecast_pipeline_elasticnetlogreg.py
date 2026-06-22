@@ -54,64 +54,20 @@ MODEL_NAME = os.getenv("MODEL_NAME", "ElasticNet")
 # ============================================================
 
 PARAMETER_GRID = [
-    {
-        "backtest_name": "elasticnet_alpha0001_l1_01_logreg_C001",
-        "alpha": 0.001,
-        "l1_ratio": 0.1,
-        "logreg_C": 0.01,
-        "random_state": 42,
-    },
-    {
-        "backtest_name": "elasticnet_alpha0001_l1_05_logreg_C001",
-        "alpha": 0.001,
-        "l1_ratio": 0.5,
-        "logreg_C": 0.01,
-        "random_state": 42,
-    },
-    {
-        "backtest_name": "elasticnet_alpha001_l1_01_logreg_C001",
-        "alpha": 0.01,
-        "l1_ratio": 0.1,
-        "logreg_C": 0.01,
-        "random_state": 42,
-    },
-    {
-        "backtest_name": "elasticnet_alpha001_l1_05_logreg_C001",
-        "alpha": 0.01,
-        "l1_ratio": 0.5,
-        "logreg_C": 0.01,
-        "random_state": 42,
-    },
-    {
-        "backtest_name": "elasticnet_alpha01_l1_01_logreg_C01",
-        "alpha": 0.1,
-        "l1_ratio": 0.1,
-        "logreg_C": 0.1,
-        "random_state": 42,
-    },
-    {
-        "backtest_name": "elasticnet_alpha01_l1_05_logreg_C01",
-        "alpha": 0.1,
-        "l1_ratio": 0.5,
-        "logreg_C": 0.1,
-        "random_state": 42,
-    },
-    {
-        "backtest_name": "elasticnet_alpha1_l1_01_logreg_C01",
-        "alpha": 1.0,
-        "l1_ratio": 0.1,
-        "logreg_C": 0.1,
-        "random_state": 42,
-    },
-    {
-        "backtest_name": "elasticnet_alpha1_l1_05_logreg_C01",
-        "alpha": 1.0,
-        "l1_ratio": 0.5,
-        "logreg_C": 0.1,
-        "random_state": 42,
-    },
-]
+    {"backtest_name": "elasticnet_alpha001_l1_01_logreg_C001_6m", "alpha": 0.01, "l1_ratio": 0.1, "logreg_C": 0.01, "random_state": 42},
+    {"backtest_name": "elasticnet_alpha001_l1_05_logreg_C001_6m", "alpha": 0.01, "l1_ratio": 0.5, "logreg_C": 0.01, "random_state": 42},
+    {"backtest_name": "elasticnet_alpha001_l1_09_logreg_C001_6m", "alpha": 0.01, "l1_ratio": 0.9, "logreg_C": 0.01, "random_state": 42},
 
+    {"backtest_name": "elasticnet_alpha01_l1_01_logreg_C001_6m", "alpha": 0.1, "l1_ratio": 0.1, "logreg_C": 0.01, "random_state": 42},
+    {"backtest_name": "elasticnet_alpha01_l1_05_logreg_C001_6m", "alpha": 0.1, "l1_ratio": 0.5, "logreg_C": 0.01, "random_state": 42},
+    {"backtest_name": "elasticnet_alpha01_l1_09_logreg_C001_6m", "alpha": 0.1, "l1_ratio": 0.9, "logreg_C": 0.01, "random_state": 42},
+
+    {"backtest_name": "elasticnet_alpha1_l1_01_logreg_C001_6m", "alpha": 1.0, "l1_ratio": 0.1, "logreg_C": 0.01, "random_state": 42},
+    {"backtest_name": "elasticnet_alpha1_l1_05_logreg_C001_6m", "alpha": 1.0, "l1_ratio": 0.5, "logreg_C": 0.01, "random_state": 42},
+
+    {"backtest_name": "elasticnet_alpha01_l1_05_logreg_C005_6m", "alpha": 0.1, "l1_ratio": 0.5, "logreg_C": 0.05, "random_state": 42},
+    {"backtest_name": "elasticnet_alpha01_l1_05_logreg_C01_6m", "alpha": 0.1, "l1_ratio": 0.5, "logreg_C": 0.1, "random_state": 42},
+]
 PRODUCTION_MODEL_PARAMS = PARAMETER_GRID[-1]
 
 
