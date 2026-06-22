@@ -27,7 +27,7 @@ LAG_DAYS = list(range(1, 53))
 
 RETURN_WINDOWS = [5, 7, 10, 14, 20]
 
-BACKTEST_START_DATE = "2026-04-01"
+BACKTEST_START_DATE = "2026-01-01"
 BACKTEST_END_DATE = "2026-05-31"
 
 OUTPUT_DIR = "outputs"
@@ -47,26 +47,34 @@ MODEL_NAME = os.getenv("MODEL_NAME", "ExtraTrees")
 
 PARAMETER_GRID = [
     {
-        "backtest_name": "et_100trees_depth3_leaf15_sqrt",
-        "n_estimators": 100,
-        "max_depth": 3,
+        "backtest_name": "et_75trees_depth4_leaf10_sqrt",
+        "n_estimators": 75,
+        "max_depth": 4,
+        "min_samples_leaf": 10,
+        "max_features": "sqrt",
+        "random_state": 42,
+    },
+    {
+        "backtest_name": "et_75trees_depth4_leaf15_sqrt",
+        "n_estimators": 75,
+        "max_depth": 4,
         "min_samples_leaf": 15,
         "max_features": "sqrt",
         "random_state": 42,
     },
     {
-        "backtest_name": "et_100trees_depth3_leaf20_sqrt",
-        "n_estimators": 100,
-        "max_depth": 3,
+        "backtest_name": "et_75trees_depth4_leaf20_sqrt",
+        "n_estimators": 75,
+        "max_depth": 4,
         "min_samples_leaf": 20,
         "max_features": "sqrt",
         "random_state": 42,
     },
     {
-        "backtest_name": "et_100trees_depth3_leaf25_sqrt",
+        "backtest_name": "et_100trees_depth4_leaf10_sqrt",
         "n_estimators": 100,
-        "max_depth": 3,
-        "min_samples_leaf": 25,
+        "max_depth": 4,
+        "min_samples_leaf": 10,
         "max_features": "sqrt",
         "random_state": 42,
     },
@@ -87,18 +95,18 @@ PARAMETER_GRID = [
         "random_state": 42,
     },
     {
-        "backtest_name": "et_100trees_depth4_leaf25_sqrt",
-        "n_estimators": 100,
+        "backtest_name": "et_125trees_depth4_leaf15_sqrt",
+        "n_estimators": 125,
         "max_depth": 4,
-        "min_samples_leaf": 25,
+        "min_samples_leaf": 15,
         "max_features": "sqrt",
         "random_state": 42,
     },
     {
-        "backtest_name": "et_150trees_depth4_leaf20_sqrt",
+        "backtest_name": "et_150trees_depth4_leaf15_sqrt",
         "n_estimators": 150,
         "max_depth": 4,
-        "min_samples_leaf": 20,
+        "min_samples_leaf": 15,
         "max_features": "sqrt",
         "random_state": 42,
     },
