@@ -27,7 +27,8 @@ MODEL_NAMES_TO_INCLUDE = [
     "ElasticNet",
 ]
 
-MIN_MODELS_REQUIRED = 3
+MIN_MODELS_REQUIRED = int(os.getenv("MIN_MODELS_REQUIRED", "3"))
+BUY_RETURN_THRESHOLD = float(os.getenv("BUY_RETURN_THRESHOLD", "0.0"))
 
 
 # ============================================================
@@ -44,6 +45,12 @@ def build_long_production(df):
         loss_col = f"{horizon}d_loss_probability"
 
         required_cols = [
+            "forecast_date",
+            "model_name",
+            "production_model_name",
+            "data_as_of_date",
+            "stock_symbol",
+            "stock_end_value",
             pred_col,
             close_pred_col,
             conf_col,
@@ -56,20 +63,7 @@ def build_long_production(df):
             print(f"Skipping {horizon}d because missing columns: {missing_cols}")
             continue
 
-        temp = df[
-            [
-                "forecast_date",
-                "model_name",
-                "production_model_name",
-                "data_as_of_date",
-                "stock_symbol",
-                "stock_end_value",
-                pred_col,
-                close_pred_col,
-                conf_col,
-                loss_col,
-            ]
-        ].copy()
+        temp = df[required_cols].copy()
 
         temp["horizon"] = horizon
 
@@ -110,10 +104,11 @@ def create_production_ensemble(long_df):
         symbol
         horizon
 
-    Important:
     If production_forecast.csv has multiple historical runs, this uses only
     the latest forecast_date.
     """
+
+    long_df = long_df.copy()
 
     long_df["forecast_date"] = pd.to_datetime(long_df["forecast_date"])
     long_df["data_as_of_date"] = pd.to_datetime(long_df["data_as_of_date"])
@@ -141,26 +136,37 @@ def create_production_ensemble(long_df):
             base_close=("base_close", "first"),
             ensemble_return_pct_pred=("return_pct_pred", "mean"),
             ensemble_close_pred=("close_pred", "mean"),
+            ensemble_confidence_no_loss=("confidence_no_loss", "mean"),
             ensemble_loss_probability=("loss_probability", "mean"),
+            min_return_pct_pred=("return_pct_pred", "min"),
+            max_return_pct_pred=("return_pct_pred", "max"),
+            median_return_pct_pred=("return_pct_pred", "median"),
+            model_votes_positive=(
+                "return_pct_pred",
+                lambda x: int((x > BUY_RETURN_THRESHOLD).sum()),
+            ),
         )
         .reset_index()
     )
 
     ensemble = ensemble[ensemble["model_count"] >= MIN_MODELS_REQUIRED].copy()
 
-    ensemble["ensemble_confidence_no_loss"] = (
-        1 - ensemble["ensemble_loss_probability"]
+    ensemble["model_vote_positive_pct"] = (
+        ensemble["model_votes_positive"] / ensemble["model_count"]
     )
 
     ensemble["ensemble_pred_positive"] = (
-        ensemble["ensemble_return_pct_pred"] > 0
+        ensemble["ensemble_return_pct_pred"] > BUY_RETURN_THRESHOLD
     ).astype(int)
 
     ensemble["ensemble_signal"] = np.where(
-        ensemble["ensemble_return_pct_pred"] > 0,
+        ensemble["ensemble_return_pct_pred"] > BUY_RETURN_THRESHOLD,
         "BUY",
         "NO_BUY",
     )
+
+    ensemble["buy_return_threshold"] = BUY_RETURN_THRESHOLD
+    ensemble["min_models_required"] = MIN_MODELS_REQUIRED
 
     ensemble = ensemble.sort_values(
         ["symbol", "horizon"]
@@ -177,7 +183,7 @@ def main():
     if not os.path.exists(PRODUCTION_INPUT_PATH):
         raise FileNotFoundError(f"Missing input file: {PRODUCTION_INPUT_PATH}")
 
-    df = pd.read_csv(PRODUCTION_INPUT_PATH)
+    df = pd.read_csv(PRODUCTION_INPUT_PATH, low_memory=False)
 
     df = df[df["model_name"].isin(MODEL_NAMES_TO_INCLUDE)].copy()
 
@@ -187,6 +193,9 @@ def main():
     long_df = build_long_production(df)
 
     print(f"Long-format production rows: {len(long_df):,}")
+
+    if long_df.empty:
+        raise ValueError("No valid long-format production rows were created.")
 
     ensemble = create_production_ensemble(long_df)
 
