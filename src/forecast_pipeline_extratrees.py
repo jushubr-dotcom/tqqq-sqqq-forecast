@@ -8,6 +8,11 @@ import yfinance as yf
 
 from sklearn.ensemble import ExtraTreesRegressor, ExtraTreesClassifier
 from sklearn.metrics import mean_absolute_error, mean_squared_error
+from backtest_metrics import (
+    add_horizon_success_metrics,
+    add_average_success_metrics,
+    get_success_metric_columns,
+)
 
 
 warnings.filterwarnings("ignore")
@@ -567,11 +572,9 @@ def build_ordered_output_row(output_row):
             f"{horizon}d_count_pred_positive",
             f"{horizon}d_count_pred_positive_w_actual_positive",
             f"{horizon}d_buy_profit_pct",
-            f"{horizon}d_return_pct_model_on",
-            f"{horizon}d_return_pct_model_off",
-            f"{horizon}d_profitable_model_on",
-            f"{horizon}d_profitable_model_off",
         ]
+    
+    ordered_cols += get_success_metric_columns(HORIZONS)
 
     ordered_cols += [
         "average_return_pct_pred",
@@ -766,30 +769,13 @@ def run_backtest(features, model_params, output_path):
                     return_pct_pred > 0 and return_pct_actual > 0
                 )
 
-                actual_positive = int(return_pct_actual > 0)
-
-                output_row[f"{horizon}d_return_pct_model_on"] = (
-                    return_pct_actual if count_pred_positive == 1 else np.nan
+                output_row = add_horizon_success_metrics(
+                    output_row=output_row,
+                    horizon=horizon,
+                    return_pct_pred=return_pct_pred,
+                    return_pct_actual=return_pct_actual,
+                    loss_probability=loss_probability,
                 )
-                
-                output_row[f"{horizon}d_return_pct_model_off"] = return_pct_actual
-                
-                output_row[f"{horizon}d_profitable_model_on"] = (
-                    count_pred_positive_w_actual_positive / count_pred_positive
-                    if count_pred_positive == 1
-                    else np.nan
-                )
-                
-                output_row[f"{horizon}d_profitable_model_off"] = actual_positive
-
-                if count_pred_positive == 1:
-                    model_on_returns.append(return_pct_actual)
-                    model_on_profitable_values.append(
-                        count_pred_positive_w_actual_positive
-                    )
-
-                model_off_returns.append(return_pct_actual)
-                model_off_profitable_values.append(actual_positive)
 
                 buy_profit_pct = safe_divide(
                     count_pred_positive_w_actual_positive,
@@ -853,22 +839,7 @@ def run_backtest(features, model_params, output_path):
                 np.mean(loss_probability_values)
             )
 
-            output_row["average_return_pct_model_on"] = (
-                float(np.mean(model_on_returns)) if model_on_returns else np.nan
-            )
-            output_row["average_return_pct_model_off"] = (
-                float(np.mean(model_off_returns)) if model_off_returns else np.nan
-            )
-            output_row["average_profitable_model_on"] = (
-                float(np.mean(model_on_profitable_values))
-                if model_on_profitable_values
-                else np.nan
-            )
-            output_row["average_profitable_model_off"] = (
-                float(np.mean(model_off_profitable_values))
-                if model_off_profitable_values
-                else np.nan
-            )
+            output_row = add_average_success_metrics(output_row, HORIZONS)
 
             output_row["sum_count_pred_positive"] = int(np.sum(pred_positive_counts))
             output_row["sum_count_pred_positive_w_actual_positive"] = int(
