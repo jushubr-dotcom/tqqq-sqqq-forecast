@@ -29,6 +29,10 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: forecast-outputs
+  cancel-in-progress: false
+
 jobs:
   run-selected-model:
     runs-on: ubuntu-latest
@@ -42,6 +46,12 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Sync latest main
+        run: |
+          git pull --rebase origin main
 
       - name: Set up Python
         uses: actions/setup-python@v6
@@ -99,6 +109,5 @@ jobs:
             echo "No output changes to commit."
           else
             git commit -m "Run full backtest: ${{ github.event.inputs.model }}"
-            git pull --rebase
-            git push
+            git push origin main
           fi
