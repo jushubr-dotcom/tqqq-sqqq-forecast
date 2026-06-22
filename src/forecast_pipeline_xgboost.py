@@ -8,6 +8,12 @@ import yfinance as yf
 
 from sklearn.metrics import mean_absolute_error, mean_squared_error
 
+from backtest_metrics import (
+    add_horizon_success_metrics,
+    add_average_success_metrics,
+    get_success_metric_columns,
+)
+
 from xgboost import XGBRegressor, XGBClassifier
 
 
@@ -609,6 +615,8 @@ def build_ordered_output_row(output_row):
             f"{horizon}d_buy_profit_pct",
         ]
 
+    ordered_cols += get_success_metric_columns(HORIZONS)
+
     ordered_cols += [
         "average_return_pct_pred",
         "average_return_pct_actual",
@@ -802,6 +810,14 @@ def run_backtest(features, model_params, output_path):
                     count_pred_positive,
                 )
 
+                output_row = add_horizon_success_metrics(
+                    output_row=output_row,
+                    horizon=horizon,
+                    return_pct_pred=return_pct_pred,
+                    return_pct_actual=return_pct_actual,
+                    loss_probability=loss_probability,
+                )
+
                 output_row[f"{horizon}d_return_pct_pred"] = return_pct_pred
                 output_row[f"{horizon}d_return_pct_actual"] = return_pct_actual
                 output_row[f"{horizon}d_close_actual"] = actual_close
@@ -858,6 +874,8 @@ def run_backtest(features, model_params, output_path):
             output_row["average_loss_probability"] = float(
                 np.mean(loss_probability_values)
             )
+
+            output_row = add_average_success_metrics(output_row, HORIZONS)
 
             output_row["sum_count_pred_positive"] = int(np.sum(pred_positive_counts))
             output_row["sum_count_pred_positive_w_actual_positive"] = int(
@@ -1107,7 +1125,7 @@ def run_production_forecast(features):
         append_row_to_csv(row.to_dict(), PRODUCTION_OUTPUT_PATH)
 
     print(f"Production forecast created {len(production_forecast):,} rows.", flush=True)
-    print(f"Saved production forecast to: {PRODUCTION_OUTPUT_PATH}", flush=True)
+    print(f"Appended production forecast to: {PRODUCTION_OUTPUT_PATH}", flush=True)
 
     return production_forecast
 
@@ -1130,7 +1148,7 @@ def main():
     run_production_forecast(features)
 
     print(f"\nSaved backtest results to: {BACKTEST_OUTPUT_PATH}")
-    print(f"Saved production forecast to: {PRODUCTION_OUTPUT_PATH}")
+    print(f"Appended production forecast to: {PRODUCTION_OUTPUT_PATH}")
 
 
 if __name__ == "__main__":
