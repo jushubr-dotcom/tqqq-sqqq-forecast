@@ -54,54 +54,18 @@ MODEL_NAME = os.getenv("MODEL_NAME", "Ridge")
 # ============================================================
 
 PARAMETER_GRID = [
-    {
-        "backtest_name": "ridge_alpha001_logreg_C001",
-        "alpha": 0.01,
-        "logreg_C": 0.01,
-        "random_state": 42,
-    },
-    {
-        "backtest_name": "ridge_alpha01_logreg_C001",
-        "alpha": 0.1,
-        "logreg_C": 0.01,
-        "random_state": 42,
-    },
-    {
-        "backtest_name": "ridge_alpha1_logreg_C001",
-        "alpha": 1.0,
-        "logreg_C": 0.01,
-        "random_state": 42,
-    },
-    {
-        "backtest_name": "ridge_alpha10_logreg_C001",
-        "alpha": 10.0,
-        "logreg_C": 0.01,
-        "random_state": 42,
-    },
-    {
-        "backtest_name": "ridge_alpha01_logreg_C01",
-        "alpha": 0.1,
-        "logreg_C": 0.1,
-        "random_state": 42,
-    },
-    {
-        "backtest_name": "ridge_alpha1_logreg_C01",
-        "alpha": 1.0,
-        "logreg_C": 0.1,
-        "random_state": 42,
-    },
-    {
-        "backtest_name": "ridge_alpha10_logreg_C01",
-        "alpha": 10.0,
-        "logreg_C": 0.1,
-        "random_state": 42,
-    },
-    {
-        "backtest_name": "ridge_alpha100_logreg_C01",
-        "alpha": 100.0,
-        "logreg_C": 0.1,
-        "random_state": 42,
-    },
+    {"backtest_name": "ridge_alpha001_logreg_C001_6m", "alpha": 0.01, "logreg_C": 0.01, "random_state": 42},
+    {"backtest_name": "ridge_alpha01_logreg_C001_6m", "alpha": 0.1, "logreg_C": 0.01, "random_state": 42},
+    {"backtest_name": "ridge_alpha1_logreg_C001_6m", "alpha": 1.0, "logreg_C": 0.01, "random_state": 42},
+    {"backtest_name": "ridge_alpha10_logreg_C001_6m", "alpha": 10.0, "logreg_C": 0.01, "random_state": 42},
+    {"backtest_name": "ridge_alpha100_logreg_C001_6m", "alpha": 100.0, "logreg_C": 0.01, "random_state": 42},
+
+    {"backtest_name": "ridge_alpha01_logreg_C005_6m", "alpha": 0.1, "logreg_C": 0.05, "random_state": 42},
+    {"backtest_name": "ridge_alpha1_logreg_C005_6m", "alpha": 1.0, "logreg_C": 0.05, "random_state": 42},
+    {"backtest_name": "ridge_alpha10_logreg_C005_6m", "alpha": 10.0, "logreg_C": 0.05, "random_state": 42},
+
+    {"backtest_name": "ridge_alpha1_logreg_C01_6m", "alpha": 1.0, "logreg_C": 0.1, "random_state": 42},
+    {"backtest_name": "ridge_alpha10_logreg_C01_6m", "alpha": 10.0, "logreg_C": 0.1, "random_state": 42},
 ]
 
 PRODUCTION_MODEL_PARAMS = PARAMETER_GRID[-1]
