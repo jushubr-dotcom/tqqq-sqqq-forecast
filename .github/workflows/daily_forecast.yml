@@ -49,7 +49,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Sync latest main
+      - name: Sync latest main before run
         run: |
           git pull --rebase origin main
 
@@ -109,5 +109,5 @@ jobs:
             echo "No output changes to commit."
           else
             git commit -m "Run full backtest: ${{ github.event.inputs.model }}"
-            git push origin main
+            git push origin HEAD:main
           fi
