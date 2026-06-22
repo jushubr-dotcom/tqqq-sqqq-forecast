@@ -17,8 +17,6 @@ ENSEMBLE_BACKTEST_OUTPUT_PATH = os.path.join(
 
 HORIZONS = [3, 5, 7, 9]
 
-# Use all models first.
-# Later you can restrict this list to only the strongest models.
 MODEL_NAMES_TO_INCLUDE = [
     "RandomForest",
     "ExtraTrees",
@@ -29,10 +27,16 @@ MODEL_NAMES_TO_INCLUDE = [
     "ElasticNet",
 ]
 
-# Minimum number of model predictions required for a row to be ensembled.
-# Example:
-# If 7 models exist but only 4 produced predictions for a date, still ensemble.
-MIN_MODELS_REQUIRED = 3
+MIN_MODELS_REQUIRED = int(os.getenv("MIN_MODELS_REQUIRED", "3"))
+MIN_POSITIVE_PREDICTIONS = int(os.getenv("MIN_POSITIVE_PREDICTIONS", "30"))
+
+# Best-model selection metric:
+#   return_uplift = model_on average actual return - model_off baseline average actual return
+# This is better than pure hit rate because it checks whether the model beats the baseline.
+MODEL_SELECTION_METRIC = os.getenv(
+    "MODEL_SELECTION_METRIC",
+    "return_uplift",
+)
 
 
 # ============================================================
@@ -45,28 +49,58 @@ def safe_divide(numerator, denominator):
     return numerator / denominator
 
 
+def require_columns(df, cols, context):
+    missing_cols = [c for c in cols if c not in df.columns]
+    if missing_cols:
+        raise ValueError(
+            f"Missing required columns for {context}: {missing_cols}"
+        )
+
+
 def get_best_backtest_per_model(df):
     """
-    Optional but recommended.
+    Chooses one best backtest_name per model_name.
 
-    Your CSV contains multiple backtest_name parameter combinations per model.
-    If you ensemble all parameter combinations, models with more parameter rows
-    will dominate the ensemble.
+    Priority:
+      1. Highest model-on return uplift over model-off baseline
+      2. Highest model-on profitable rate uplift
+      3. Higher positive prediction count
 
-    This function chooses one best backtest_name per model_name using:
-        1. Highest overall_buy_profit_pct
-        2. Minimum positive prediction count filter
+    Requires the numerator/denominator columns produced by backtest_metrics.py.
     """
+
+    required_cols = [
+        "model_name",
+        "backtest_name",
+        "sum_count_pred_positive",
+        "sum_count_pred_positive_w_actual_positive",
+        "average_return_pct_model_on_numerator",
+        "average_return_pct_model_on_denominator",
+        "average_return_pct_model_off_numerator",
+        "average_return_pct_model_off_denominator",
+        "average_profitable_model_on_numerator",
+        "average_profitable_model_on_denominator",
+        "average_profitable_model_off_numerator",
+        "average_profitable_model_off_denominator",
+    ]
+    require_columns(df, required_cols, "best backtest selection")
 
     summary = (
         df.groupby(["model_name", "backtest_name"], dropna=False)
         .agg(
-            avg_overall_buy_profit_pct=("overall_buy_profit_pct", "mean"),
             total_pred_positive=("sum_count_pred_positive", "sum"),
             total_pred_positive_actual_positive=(
                 "sum_count_pred_positive_w_actual_positive",
                 "sum",
             ),
+            model_on_return_num=("average_return_pct_model_on_numerator", "sum"),
+            model_on_return_den=("average_return_pct_model_on_denominator", "sum"),
+            model_off_return_num=("average_return_pct_model_off_numerator", "sum"),
+            model_off_return_den=("average_return_pct_model_off_denominator", "sum"),
+            model_on_profitable_num=("average_profitable_model_on_numerator", "sum"),
+            model_on_profitable_den=("average_profitable_model_on_denominator", "sum"),
+            model_off_profitable_num=("average_profitable_model_off_numerator", "sum"),
+            model_off_profitable_den=("average_profitable_model_off_denominator", "sum"),
             row_count=("symbol", "size"),
         )
         .reset_index()
@@ -80,45 +114,68 @@ def get_best_backtest_per_model(df):
         axis=1,
     )
 
-    # Avoid selecting a model variant that only made a tiny number of buy calls.
-    MIN_POSITIVE_PREDICTIONS = int(os.getenv("MIN_POSITIVE_PREDICTIONS", "30"))
+    summary["return_pct_model_on"] = summary.apply(
+        lambda r: safe_divide(r["model_on_return_num"], r["model_on_return_den"]),
+        axis=1,
+    )
+    summary["return_pct_model_off"] = summary.apply(
+        lambda r: safe_divide(r["model_off_return_num"], r["model_off_return_den"]),
+        axis=1,
+    )
+    summary["return_pct_model_uplift"] = (
+        summary["return_pct_model_on"] - summary["return_pct_model_off"]
+    )
 
-    summary = summary[summary["total_pred_positive"] >= MIN_POSITIVE_PREDICTIONS].copy()
-    
-    if summary.empty:
+    summary["profitable_model_on"] = summary.apply(
+        lambda r: safe_divide(
+            r["model_on_profitable_num"],
+            r["model_on_profitable_den"],
+        ),
+        axis=1,
+    )
+    summary["profitable_model_off"] = summary.apply(
+        lambda r: safe_divide(
+            r["model_off_profitable_num"],
+            r["model_off_profitable_den"],
+        ),
+        axis=1,
+    )
+    summary["profitable_model_uplift"] = (
+        summary["profitable_model_on"] - summary["profitable_model_off"]
+    )
+
+    filtered = summary[
+        summary["total_pred_positive"] >= MIN_POSITIVE_PREDICTIONS
+    ].copy()
+
+    if filtered.empty:
         print(
             f"No model/backtest combinations passed MIN_POSITIVE_PREDICTIONS="
             f"{MIN_POSITIVE_PREDICTIONS}. Falling back to best available combinations."
         )
-    
-        summary = (
-            df.groupby(["model_name", "backtest_name"], dropna=False)
-            .agg(
-                avg_overall_buy_profit_pct=("overall_buy_profit_pct", "mean"),
-                total_pred_positive=("sum_count_pred_positive", "sum"),
-                total_pred_positive_actual_positive=(
-                    "sum_count_pred_positive_w_actual_positive",
-                    "sum",
-                ),
-                row_count=("symbol", "size"),
-            )
-            .reset_index()
-        )
-    
-        summary["true_overall_buy_profit_pct"] = summary.apply(
-            lambda r: safe_divide(
-                r["total_pred_positive_actual_positive"],
-                r["total_pred_positive"],
-            ),
-            axis=1,
-        )
+        filtered = summary.copy()
 
-    summary = summary.sort_values(
-        ["model_name", "true_overall_buy_profit_pct", "total_pred_positive"],
-        ascending=[True, False, False],
+    if MODEL_SELECTION_METRIC == "buy_profit":
+        sort_cols = [
+            "model_name",
+            "true_overall_buy_profit_pct",
+            "return_pct_model_uplift",
+            "total_pred_positive",
+        ]
+    else:
+        sort_cols = [
+            "model_name",
+            "return_pct_model_uplift",
+            "profitable_model_uplift",
+            "total_pred_positive",
+        ]
+
+    filtered = filtered.sort_values(
+        sort_cols,
+        ascending=[True, False, False, False],
     )
 
-    best = summary.groupby("model_name").head(1).reset_index(drop=True)
+    best = filtered.groupby("model_name").head(1).reset_index(drop=True)
 
     return best
 
@@ -140,9 +197,9 @@ def filter_to_best_backtests(df, best_backtests):
 
 def build_long_horizon_backtest(df):
     """
-    Converts wide backtest rows into long format:
+    Converts wide backtest rows into long format.
 
-    one row per:
+    One row per:
         model_name
         backtest_name
         symbol
@@ -159,13 +216,32 @@ def build_long_horizon_backtest(df):
         conf_col = f"{horizon}d_confidence_no_loss"
         loss_col = f"{horizon}d_loss_probability"
 
+        metric_cols = [
+            f"{horizon}d_return_pct_model_on_numerator",
+            f"{horizon}d_return_pct_model_on_denominator",
+            f"{horizon}d_return_pct_model_off_numerator",
+            f"{horizon}d_return_pct_model_off_denominator",
+            f"{horizon}d_profitable_model_on_numerator",
+            f"{horizon}d_profitable_model_on_denominator",
+            f"{horizon}d_profitable_model_off_numerator",
+            f"{horizon}d_profitable_model_off_denominator",
+        ]
+
         required_cols = [
+            "run_timestamp",
+            "model_name",
+            "backtest_name",
+            "symbol",
+            "test_start_date",
+            "test_end_date",
+            "previous_trading_date",
+            "previous_close_before_test_start",
             pred_col,
             actual_col,
             close_actual_col,
             conf_col,
             loss_col,
-        ]
+        ] + metric_cols
 
         missing_cols = [c for c in required_cols if c not in df.columns]
 
@@ -173,23 +249,7 @@ def build_long_horizon_backtest(df):
             print(f"Skipping {horizon}d because missing columns: {missing_cols}")
             continue
 
-        temp = df[
-            [
-                "run_timestamp",
-                "model_name",
-                "backtest_name",
-                "symbol",
-                "test_start_date",
-                "test_end_date",
-                "previous_trading_date",
-                "previous_close_before_test_start",
-                pred_col,
-                actual_col,
-                close_actual_col,
-                conf_col,
-                loss_col,
-            ]
-        ].copy()
+        temp = df[required_cols].copy()
 
         temp["horizon"] = horizon
 
@@ -200,6 +260,14 @@ def build_long_horizon_backtest(df):
                 close_actual_col: "close_actual",
                 conf_col: "confidence_no_loss",
                 loss_col: "loss_probability",
+                f"{horizon}d_return_pct_model_on_numerator": "return_pct_model_on_numerator",
+                f"{horizon}d_return_pct_model_on_denominator": "return_pct_model_on_denominator",
+                f"{horizon}d_return_pct_model_off_numerator": "return_pct_model_off_numerator",
+                f"{horizon}d_return_pct_model_off_denominator": "return_pct_model_off_denominator",
+                f"{horizon}d_profitable_model_on_numerator": "profitable_model_on_numerator",
+                f"{horizon}d_profitable_model_on_denominator": "profitable_model_on_denominator",
+                f"{horizon}d_profitable_model_off_numerator": "profitable_model_off_numerator",
+                f"{horizon}d_profitable_model_off_denominator": "profitable_model_off_denominator",
             }
         )
 
@@ -224,6 +292,12 @@ def build_long_horizon_backtest(df):
 def create_backtest_ensemble(long_df):
     """
     Creates simple average ensemble by symbol/date/horizon.
+
+    The ensemble buy decision is:
+        ensemble_return_pct_pred > 0
+
+    The ensemble model-on/off metrics are recalculated from the ensemble decision,
+    not averaged from individual model decisions.
     """
 
     group_cols = [
@@ -275,6 +349,74 @@ def create_backtest_ensemble(long_df):
         axis=1,
     )
 
+    # Return model ON
+    ensemble["ensemble_return_pct_model_on_numerator"] = np.where(
+        ensemble["ensemble_count_pred_positive"] == 1,
+        ensemble["ensemble_return_pct_actual"],
+        0.0,
+    )
+    ensemble["ensemble_return_pct_model_on_denominator"] = (
+        ensemble["ensemble_count_pred_positive"]
+    )
+    ensemble["ensemble_return_pct_model_on"] = ensemble.apply(
+        lambda r: safe_divide(
+            r["ensemble_return_pct_model_on_numerator"],
+            r["ensemble_return_pct_model_on_denominator"],
+        ),
+        axis=1,
+    )
+
+    # Return model OFF / baseline
+    ensemble["ensemble_return_pct_model_off_numerator"] = (
+        ensemble["ensemble_return_pct_actual"]
+    )
+    ensemble["ensemble_return_pct_model_off_denominator"] = 1
+    ensemble["ensemble_return_pct_model_off"] = ensemble.apply(
+        lambda r: safe_divide(
+            r["ensemble_return_pct_model_off_numerator"],
+            r["ensemble_return_pct_model_off_denominator"],
+        ),
+        axis=1,
+    )
+
+    ensemble["ensemble_return_pct_model_uplift"] = (
+        ensemble["ensemble_return_pct_model_on"]
+        - ensemble["ensemble_return_pct_model_off"]
+    )
+
+    # Profitable model ON
+    ensemble["ensemble_profitable_model_on_numerator"] = (
+        ensemble["ensemble_count_pred_positive_w_actual_positive"]
+    )
+    ensemble["ensemble_profitable_model_on_denominator"] = (
+        ensemble["ensemble_count_pred_positive"]
+    )
+    ensemble["ensemble_profitable_model_on"] = ensemble.apply(
+        lambda r: safe_divide(
+            r["ensemble_profitable_model_on_numerator"],
+            r["ensemble_profitable_model_on_denominator"],
+        ),
+        axis=1,
+    )
+
+    # Profitable model OFF / baseline
+    ensemble["ensemble_profitable_model_off_numerator"] = (
+        ensemble["ensemble_return_pct_actual"] > 0
+    ).astype(int)
+    ensemble["ensemble_profitable_model_off_denominator"] = 1
+    ensemble["ensemble_profitable_model_off"] = ensemble.apply(
+        lambda r: safe_divide(
+            r["ensemble_profitable_model_off_numerator"],
+            r["ensemble_profitable_model_off_denominator"],
+        ),
+        axis=1,
+    )
+
+    ensemble["ensemble_profitable_model_uplift"] = (
+        ensemble["ensemble_profitable_model_on"]
+        - ensemble["ensemble_profitable_model_off"]
+    )
+
     return ensemble
 
 
@@ -296,6 +438,14 @@ def summarise_ensemble(ensemble):
                 "sum",
             ),
             avg_loss_probability=("ensemble_loss_probability", "mean"),
+            return_model_on_num=("ensemble_return_pct_model_on_numerator", "sum"),
+            return_model_on_den=("ensemble_return_pct_model_on_denominator", "sum"),
+            return_model_off_num=("ensemble_return_pct_model_off_numerator", "sum"),
+            return_model_off_den=("ensemble_return_pct_model_off_denominator", "sum"),
+            profitable_model_on_num=("ensemble_profitable_model_on_numerator", "sum"),
+            profitable_model_on_den=("ensemble_profitable_model_on_denominator", "sum"),
+            profitable_model_off_num=("ensemble_profitable_model_off_numerator", "sum"),
+            profitable_model_off_den=("ensemble_profitable_model_off_denominator", "sum"),
         )
         .reset_index()
     )
@@ -306,6 +456,36 @@ def summarise_ensemble(ensemble):
             r["sum_count_pred_positive"],
         ),
         axis=1,
+    )
+
+    summary["return_pct_model_on"] = summary.apply(
+        lambda r: safe_divide(r["return_model_on_num"], r["return_model_on_den"]),
+        axis=1,
+    )
+    summary["return_pct_model_off"] = summary.apply(
+        lambda r: safe_divide(r["return_model_off_num"], r["return_model_off_den"]),
+        axis=1,
+    )
+    summary["return_pct_model_uplift"] = (
+        summary["return_pct_model_on"] - summary["return_pct_model_off"]
+    )
+
+    summary["profitable_model_on"] = summary.apply(
+        lambda r: safe_divide(
+            r["profitable_model_on_num"],
+            r["profitable_model_on_den"],
+        ),
+        axis=1,
+    )
+    summary["profitable_model_off"] = summary.apply(
+        lambda r: safe_divide(
+            r["profitable_model_off_num"],
+            r["profitable_model_off_den"],
+        ),
+        axis=1,
+    )
+    summary["profitable_model_uplift"] = (
+        summary["profitable_model_on"] - summary["profitable_model_off"]
     )
 
     summary = summary.sort_values(
