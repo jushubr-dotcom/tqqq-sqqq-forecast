@@ -27,7 +27,7 @@ LAG_DAYS = list(range(1, 53))
 
 RETURN_WINDOWS = [5, 7, 10, 14, 20]
 
-BACKTEST_START_DATE = "2026-01-01"
+BACKTEST_START_DATE = "2026-05-01"
 BACKTEST_END_DATE = "2026-05-31"
 
 OUTPUT_DIR = "outputs"
@@ -567,6 +567,10 @@ def build_ordered_output_row(output_row):
             f"{horizon}d_count_pred_positive",
             f"{horizon}d_count_pred_positive_w_actual_positive",
             f"{horizon}d_buy_profit_pct",
+            f"{horizon}d_return_pct_model_on",
+            f"{horizon}d_return_pct_model_off",
+            f"{horizon}d_profitable_model_on",
+            f"{horizon}d_profitable_model_off",
         ]
 
     ordered_cols += [
@@ -575,6 +579,10 @@ def build_ordered_output_row(output_row):
         "average_close_actual",
         "average_confidence_no_loss",
         "average_loss_probability",
+        "average_return_pct_model_on",
+        "average_return_pct_model_off",
+        "average_profitable_model_on",
+        "average_profitable_model_off",
         "sum_count_pred_positive",
         "sum_count_pred_positive_w_actual_positive",
         "overall_buy_profit_pct",
@@ -692,6 +700,10 @@ def run_backtest(features, model_params, output_path):
             actual_closes = []
             confidence_no_loss_values = []
             loss_probability_values = []
+            model_on_returns = []
+            model_off_returns = []
+            model_on_profitable_values = []
+            model_off_profitable_values = []
             pred_positive_counts = []
             pred_positive_actual_positive_counts = []
             feature_importance_arrays = []
@@ -754,6 +766,31 @@ def run_backtest(features, model_params, output_path):
                     return_pct_pred > 0 and return_pct_actual > 0
                 )
 
+                actual_positive = int(return_pct_actual > 0)
+
+                output_row[f"{horizon}d_return_pct_model_on"] = (
+                    return_pct_actual if count_pred_positive == 1 else np.nan
+                )
+                
+                output_row[f"{horizon}d_return_pct_model_off"] = return_pct_actual
+                
+                output_row[f"{horizon}d_profitable_model_on"] = (
+                    count_pred_positive_w_actual_positive / count_pred_positive
+                    if count_pred_positive == 1
+                    else np.nan
+                )
+                
+                output_row[f"{horizon}d_profitable_model_off"] = actual_positive
+
+                if count_pred_positive == 1:
+                    model_on_returns.append(return_pct_actual)
+                    model_on_profitable_values.append(
+                        count_pred_positive_w_actual_positive
+                    )
+
+                model_off_returns.append(return_pct_actual)
+                model_off_profitable_values.append(actual_positive)
+
                 buy_profit_pct = safe_divide(
                     count_pred_positive_w_actual_positive,
                     count_pred_positive,
@@ -814,6 +851,23 @@ def run_backtest(features, model_params, output_path):
             )
             output_row["average_loss_probability"] = float(
                 np.mean(loss_probability_values)
+            )
+
+            output_row["average_return_pct_model_on"] = (
+                float(np.mean(model_on_returns)) if model_on_returns else np.nan
+            )
+            output_row["average_return_pct_model_off"] = (
+                float(np.mean(model_off_returns)) if model_off_returns else np.nan
+            )
+            output_row["average_profitable_model_on"] = (
+                float(np.mean(model_on_profitable_values))
+                if model_on_profitable_values
+                else np.nan
+            )
+            output_row["average_profitable_model_off"] = (
+                float(np.mean(model_off_profitable_values))
+                if model_off_profitable_values
+                else np.nan
             )
 
             output_row["sum_count_pred_positive"] = int(np.sum(pred_positive_counts))
@@ -1060,7 +1114,7 @@ def run_production_forecast(features):
         append_row_to_csv(row.to_dict(), PRODUCTION_OUTPUT_PATH)
 
     print(f"Production forecast created {len(production_forecast):,} rows.", flush=True)
-    print(f"Saved production forecast to: {PRODUCTION_OUTPUT_PATH}", flush=True)
+    print(f"Appended production forecast to: {PRODUCTION_OUTPUT_PATH}", flush=True)
 
     return production_forecast
 
@@ -1083,7 +1137,7 @@ def main():
     run_production_forecast(features)
 
     print(f"\nSaved backtest results to: {BACKTEST_OUTPUT_PATH}")
-    print(f"Saved production forecast to: {PRODUCTION_OUTPUT_PATH}")
+    print(f"Appended production forecast to: {PRODUCTION_OUTPUT_PATH}")
 
 
 if __name__ == "__main__":
