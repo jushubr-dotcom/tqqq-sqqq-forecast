@@ -53,12 +53,129 @@ MODEL_NAME = os.getenv("MODEL_NAME", "LightGBM")
 # ============================================================
 
 PARAMETER_GRID = [
-    {"backtest_name": "lgbm_75trees_depth2_lr003_leaves3_child30_sub08_col08_6m", "n_estimators": 75, "max_depth": 2, "learning_rate": 0.03, "num_leaves": 3, "min_child_samples": 30, "subsample": 0.8, "colsample_bytree": 0.8, "random_state": 42},
-    {"backtest_name": "lgbm_100trees_depth2_lr003_leaves3_child30_sub08_col08_6m", "n_estimators": 100, "max_depth": 2, "learning_rate": 0.03, "num_leaves": 3, "min_child_samples": 30, "subsample": 0.8, "colsample_bytree": 0.8, "random_state": 42},
-    {"backtest_name": "lgbm_100trees_depth2_lr003_leaves3_child40_sub08_col08_6m", "n_estimators": 100, "max_depth": 2, "learning_rate": 0.03, "num_leaves": 3, "min_child_samples": 40, "subsample": 0.8, "colsample_bytree": 0.8, "random_state": 42},
-    {"backtest_name": "lgbm_100trees_depth2_lr004_leaves3_child40_sub08_col08_6m", "n_estimators": 100, "max_depth": 2, "learning_rate": 0.04, "num_leaves": 3, "min_child_samples": 40, "subsample": 0.8, "colsample_bytree": 0.8, "random_state": 42},
-    {"backtest_name": "lgbm_125trees_depth2_lr004_leaves3_child40_sub08_col08_6m", "n_estimators": 125, "max_depth": 2, "learning_rate": 0.04, "num_leaves": 3, "min_child_samples": 40, "subsample": 0.8, "colsample_bytree": 0.8, "random_state": 42},
-    {"backtest_name": "lgbm_100trees_depth2_lr004_leaves3_child50_sub08_col08_6m", "n_estimators": 100, "max_depth": 2, "learning_rate": 0.04, "num_leaves": 3, "min_child_samples": 50, "subsample": 0.8, "colsample_bytree": 0.8, "random_state": 42},
+    # Keep current best as benchmark
+    {
+        "backtest_name": "lgbm_100trees_depth2_lr003_leaves3_child40_sub08_col08_6m",
+        "n_estimators": 100,
+        "max_depth": 2,
+        "num_leaves": 3,
+        "learning_rate": 0.003,
+        "min_child_samples": 40,
+        "subsample": 0.8,
+        "colsample_bytree": 0.8,
+        "random_state": 42,
+    },
+
+    # Slightly more trees, same conservative structure
+    {
+        "backtest_name": "lgbm_150trees_depth2_lr003_leaves3_child40_sub08_col08_6m",
+        "n_estimators": 150,
+        "max_depth": 2,
+        "num_leaves": 3,
+        "learning_rate": 0.003,
+        "min_child_samples": 40,
+        "subsample": 0.8,
+        "colsample_bytree": 0.8,
+        "random_state": 42,
+    },
+
+    # Test higher learning rate with current best structure
+    {
+        "backtest_name": "lgbm_100trees_depth2_lr005_leaves3_child40_sub08_col08_6m",
+        "n_estimators": 100,
+        "max_depth": 2,
+        "num_leaves": 3,
+        "learning_rate": 0.005,
+        "min_child_samples": 40,
+        "subsample": 0.8,
+        "colsample_bytree": 0.8,
+        "random_state": 42,
+    },
+
+    # Depth 3, still controlled
+    {
+        "backtest_name": "lgbm_100trees_depth3_lr003_leaves5_child40_sub08_col08_6m",
+        "n_estimators": 100,
+        "max_depth": 3,
+        "num_leaves": 5,
+        "learning_rate": 0.003,
+        "min_child_samples": 40,
+        "subsample": 0.8,
+        "colsample_bytree": 0.8,
+        "random_state": 42,
+    },
+    {
+        "backtest_name": "lgbm_100trees_depth3_lr005_leaves5_child40_sub08_col08_6m",
+        "n_estimators": 100,
+        "max_depth": 3,
+        "num_leaves": 5,
+        "learning_rate": 0.005,
+        "min_child_samples": 40,
+        "subsample": 0.8,
+        "colsample_bytree": 0.8,
+        "random_state": 42,
+    },
+
+    # Try leaves 7 but still depth 3
+    {
+        "backtest_name": "lgbm_100trees_depth3_lr003_leaves7_child40_sub08_col08_6m",
+        "n_estimators": 100,
+        "max_depth": 3,
+        "num_leaves": 7,
+        "learning_rate": 0.003,
+        "min_child_samples": 40,
+        "subsample": 0.8,
+        "colsample_bytree": 0.8,
+        "random_state": 42,
+    },
+
+    # Test child regularisation
+    {
+        "backtest_name": "lgbm_100trees_depth3_lr003_leaves5_child30_sub08_col08_6m",
+        "n_estimators": 100,
+        "max_depth": 3,
+        "num_leaves": 5,
+        "learning_rate": 0.003,
+        "min_child_samples": 30,
+        "subsample": 0.8,
+        "colsample_bytree": 0.8,
+        "random_state": 42,
+    },
+    {
+        "backtest_name": "lgbm_100trees_depth3_lr003_leaves5_child50_sub08_col08_6m",
+        "n_estimators": 100,
+        "max_depth": 3,
+        "num_leaves": 5,
+        "learning_rate": 0.003,
+        "min_child_samples": 50,
+        "subsample": 0.8,
+        "colsample_bytree": 0.8,
+        "random_state": 42,
+    },
+
+    # More randomness, maybe better generalisation
+    {
+        "backtest_name": "lgbm_100trees_depth3_lr003_leaves5_child40_sub07_col08_6m",
+        "n_estimators": 100,
+        "max_depth": 3,
+        "num_leaves": 5,
+        "learning_rate": 0.003,
+        "min_child_samples": 40,
+        "subsample": 0.7,
+        "colsample_bytree": 0.8,
+        "random_state": 42,
+    },
+    {
+        "backtest_name": "lgbm_100trees_depth3_lr003_leaves5_child40_sub08_col07_6m",
+        "n_estimators": 100,
+        "max_depth": 3,
+        "num_leaves": 5,
+        "learning_rate": 0.003,
+        "min_child_samples": 40,
+        "subsample": 0.8,
+        "colsample_bytree": 0.7,
+        "random_state": 42,
+    },
 ]
 
 PRODUCTION_MODEL_PARAMS = PARAMETER_GRID[-1]
