@@ -161,16 +161,27 @@ def build_family_performance_table(df, date_col, model_family_col, pred_col, act
     df = df.copy()
 
     df["model_on"] = df[pred_col] > MODEL_ON_THRESHOLD
-    df["actual_profitable_row"] = df[actual_col] > 0
+
+    # One row per date + family.
+    # Family is ON if any variant in that family is ON that day.
+    family_by_date = (
+        df.groupby([date_col, model_family_col], as_index=False)
+        .agg(
+            family_on=("model_on", "max"),
+            actual_3d_return=(actual_col, "mean"),
+        )
+    )
+
+    family_by_date["actual_profitable"] = family_by_date["actual_3d_return"] > 0
 
     rows = []
 
-    for family, g in df.groupby(model_family_col):
-        model_on = g[g["model_on"]]
-        model_off = g[~g["model_on"]]
+    for family, g in family_by_date.groupby(model_family_col):
+        model_on = g[g["family_on"]]
+        model_off = g[~g["family_on"]]
 
-        model_on_precision = model_on["actual_profitable_row"].mean() if len(model_on) else np.nan
-        model_off_precision = model_off["actual_profitable_row"].mean() if len(model_off) else np.nan
+        model_on_precision = model_on["actual_profitable"].mean() if len(model_on) else np.nan
+        model_off_precision = model_off["actual_profitable"].mean() if len(model_off) else np.nan
 
         precision_lift = (
             model_on_precision - model_off_precision
@@ -181,14 +192,16 @@ def build_family_performance_table(df, date_col, model_family_col, pred_col, act
         rows.append(
             {
                 "model_family": family,
-                "total_rows": len(g),
-                "model_on_rows": len(model_on),
-                "model_off_rows": len(model_off),
+                "total_dates": len(g),
+                "model_on_dates": len(model_on),
+                "model_off_dates": len(model_off),
                 "model_on_precision": model_on_precision,
                 "model_off_precision": model_off_precision,
                 "precision_lift": precision_lift,
-                "avg_return_when_on": model_on[actual_col].mean() if len(model_on) else np.nan,
-                "worst_return_when_on": model_on[actual_col].min() if len(model_on) else np.nan,
+                "avg_return_when_on": model_on["actual_3d_return"].mean() if len(model_on) else np.nan,
+                "avg_return_when_off": model_off["actual_3d_return"].mean() if len(model_off) else np.nan,
+                "worst_return_when_on": model_on["actual_3d_return"].min() if len(model_on) else np.nan,
+                "worst_return_when_off": model_off["actual_3d_return"].min() if len(model_off) else np.nan,
             }
         )
 
@@ -200,7 +213,6 @@ def build_family_performance_table(df, date_col, model_family_col, pred_col, act
     )
 
     return perf
-
 
 # ============================================================
 # ENSEMBLE
