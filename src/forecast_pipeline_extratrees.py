@@ -32,7 +32,7 @@ LAG_DAYS = list(range(1, 53))
 
 RETURN_WINDOWS = [5, 7, 10, 14, 20]
 
-BACKTEST_START_DATE = "2026-01-01"
+BACKTEST_START_DATE = "2025-11-01"
 BACKTEST_END_DATE = "2026-05-31"
 
 OUTPUT_DIR = "outputs"
@@ -51,16 +51,111 @@ MODEL_NAME = os.getenv("MODEL_NAME", "ExtraTrees")
 # ============================================================
 
 PARAMETER_GRID = [
-    {"backtest_name": "et_100trees_depth4_leaf18_sqrt_6m", "n_estimators": 100, "max_depth": 4, "min_samples_leaf": 18, "max_features": "sqrt", "random_state": 42},
-    {"backtest_name": "et_100trees_depth4_leaf20_sqrt_6m", "n_estimators": 100, "max_depth": 4, "min_samples_leaf": 20, "max_features": "sqrt", "random_state": 42},
-    {"backtest_name": "et_100trees_depth4_leaf22_sqrt_6m", "n_estimators": 100, "max_depth": 4, "min_samples_leaf": 22, "max_features": "sqrt", "random_state": 42},
+    # 75 trees: check if fewer trees generalise better
+    {
+        "backtest_name": "et_75trees_depth4_leaf20_sqrt_8m",
+        "n_estimators": 75,
+        "max_depth": 4,
+        "min_samples_leaf": 20,
+        "max_features": "sqrt",
+        "random_state": 42,
+    },
 
-    {"backtest_name": "et_125trees_depth4_leaf18_sqrt_6m", "n_estimators": 125, "max_depth": 4, "min_samples_leaf": 18, "max_features": "sqrt", "random_state": 42},
-    {"backtest_name": "et_125trees_depth4_leaf20_sqrt_6m", "n_estimators": 125, "max_depth": 4, "min_samples_leaf": 20, "max_features": "sqrt", "random_state": 42},
-    {"backtest_name": "et_125trees_depth4_leaf22_sqrt_6m", "n_estimators": 125, "max_depth": 4, "min_samples_leaf": 22, "max_features": "sqrt", "random_state": 42},
+    # 100 trees: tight leaf sweep around current winner
+    {
+        "backtest_name": "et_100trees_depth4_leaf16_sqrt_8m",
+        "n_estimators": 100,
+        "max_depth": 4,
+        "min_samples_leaf": 16,
+        "max_features": "sqrt",
+        "random_state": 42,
+    },
+    {
+        "backtest_name": "et_100trees_depth4_leaf18_sqrt_8m",
+        "n_estimators": 100,
+        "max_depth": 4,
+        "min_samples_leaf": 18,
+        "max_features": "sqrt",
+        "random_state": 42,
+    },
+    {
+        "backtest_name": "et_100trees_depth4_leaf20_sqrt_8m",
+        "n_estimators": 100,
+        "max_depth": 4,
+        "min_samples_leaf": 20,
+        "max_features": "sqrt",
+        "random_state": 42,
+    },
+    {
+        "backtest_name": "et_100trees_depth4_leaf22_sqrt_6m",
+        "n_estimators": 100,
+        "max_depth": 4,
+        "min_samples_leaf": 22,
+        "max_features": "sqrt",
+        "random_state": 42,
+    },
+    {
+        "backtest_name": "et_100trees_depth4_leaf24_sqrt_8m",
+        "n_estimators": 100,
+        "max_depth": 4,
+        "min_samples_leaf": 24,
+        "max_features": "sqrt",
+        "random_state": 42,
+    },
 
-    {"backtest_name": "et_100trees_depth5_leaf20_sqrt_6m", "n_estimators": 100, "max_depth": 5, "min_samples_leaf": 20, "max_features": "sqrt", "random_state": 42},
-    {"backtest_name": "et_100trees_depth4_leaf20_log2_6m", "n_estimators": 100, "max_depth": 4, "min_samples_leaf": 20, "max_features": "log2", "random_state": 42},
+    # 125 trees: confirm stability around leaf18/20/22
+    {
+        "backtest_name": "et_125trees_depth4_leaf18_sqrt_8m",
+        "n_estimators": 125,
+        "max_depth": 4,
+        "min_samples_leaf": 18,
+        "max_features": "sqrt",
+        "random_state": 42,
+    },
+    {
+        "backtest_name": "et_125trees_depth4_leaf20_sqrt_8m",
+        "n_estimators": 125,
+        "max_depth": 4,
+        "min_samples_leaf": 20,
+        "max_features": "sqrt",
+        "random_state": 42,
+    },
+    {
+        "backtest_name": "et_125trees_depth4_leaf22_sqrt_8m",
+        "n_estimators": 125,
+        "max_depth": 4,
+        "min_samples_leaf": 22,
+        "max_features": "sqrt",
+        "random_state": 42,
+    },
+
+    # 150 trees: check if extra stability helps
+    {
+        "backtest_name": "et_150trees_depth4_leaf20_sqrt_8m",
+        "n_estimators": 150,
+        "max_depth": 4,
+        "min_samples_leaf": 20,
+        "max_features": "sqrt",
+        "random_state": 42,
+    },
+
+    # Keep benchmark alternatives from previous run
+    {
+        "backtest_name": "et_100trees_depth5_leaf20_sqrt_8m",
+        "n_estimators": 100,
+        "max_depth": 5,
+        "min_samples_leaf": 20,
+        "max_features": "sqrt",
+        "random_state": 42,
+    },
+    {
+        "backtest_name": "et_100trees_depth4_leaf20_log2_8m",
+        "n_estimators": 100,
+        "max_depth": 4,
+        "min_samples_leaf": 20,
+        "max_features": "log2",
+        "random_state": 42,
+    },
 ]
 
 PRODUCTION_MODEL_PARAMS = PARAMETER_GRID[-1]
