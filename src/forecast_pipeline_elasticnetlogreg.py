@@ -35,7 +35,7 @@ LAG_DAYS = list(range(1, 53))
 
 RETURN_WINDOWS = [5, 7, 10, 14, 20]
 
-BACKTEST_START_DATE = "2026-01-01"
+BACKTEST_START_DATE = "2025-11-01"
 BACKTEST_END_DATE = "2026-05-31"
 
 OUTPUT_DIR = "outputs"
@@ -54,19 +54,124 @@ MODEL_NAME = os.getenv("MODEL_NAME", "ElasticNet")
 # ============================================================
 
 PARAMETER_GRID = [
-    {"backtest_name": "elasticnet_alpha001_l1_01_logreg_C001_6m", "alpha": 0.01, "l1_ratio": 0.1, "logreg_C": 0.01, "random_state": 42},
-    {"backtest_name": "elasticnet_alpha001_l1_05_logreg_C001_6m", "alpha": 0.01, "l1_ratio": 0.5, "logreg_C": 0.01, "random_state": 42},
-    {"backtest_name": "elasticnet_alpha001_l1_09_logreg_C001_6m", "alpha": 0.01, "l1_ratio": 0.9, "logreg_C": 0.01, "random_state": 42},
+    # Keep current best non-trivial benchmark
+    {
+        "backtest_name": "elasticnet_alpha001_l1_05_logreg_C001_8m",
+        "alpha": 0.01,
+        "l1_ratio": 0.5,
+        "logreg_C": 0.01,
+        "random_state": 42,
+    },
 
-    {"backtest_name": "elasticnet_alpha01_l1_01_logreg_C001_6m", "alpha": 0.1, "l1_ratio": 0.1, "logreg_C": 0.01, "random_state": 42},
-    {"backtest_name": "elasticnet_alpha01_l1_05_logreg_C001_6m", "alpha": 0.1, "l1_ratio": 0.5, "logreg_C": 0.01, "random_state": 42},
-    {"backtest_name": "elasticnet_alpha01_l1_09_logreg_C001_6m", "alpha": 0.1, "l1_ratio": 0.9, "logreg_C": 0.01, "random_state": 42},
+    # Stronger logistic regularisation: reduce buy-everything behaviour
+    {
+        "backtest_name": "elasticnet_alpha001_l1_05_logreg_C0005_8m",
+        "alpha": 0.01,
+        "l1_ratio": 0.5,
+        "logreg_C": 0.005,
+        "random_state": 42,
+    },
+    {
+        "backtest_name": "elasticnet_alpha001_l1_05_logreg_C0002_8m",
+        "alpha": 0.01,
+        "l1_ratio": 0.5,
+        "logreg_C": 0.002,
+        "random_state": 42,
+    },
 
-    {"backtest_name": "elasticnet_alpha1_l1_01_logreg_C001_6m", "alpha": 1.0, "l1_ratio": 0.1, "logreg_C": 0.01, "random_state": 42},
-    {"backtest_name": "elasticnet_alpha1_l1_05_logreg_C001_6m", "alpha": 1.0, "l1_ratio": 0.5, "logreg_C": 0.01, "random_state": 42},
+    # More L1-heavy: force sparse/selective signal
+    {
+        "backtest_name": "elasticnet_alpha001_l1_07_logreg_C001_8m",
+        "alpha": 0.01,
+        "l1_ratio": 0.7,
+        "logreg_C": 0.01,
+        "random_state": 42,
+    },
+    {
+        "backtest_name": "elasticnet_alpha001_l1_08_logreg_C001_8m",
+        "alpha": 0.01,
+        "l1_ratio": 0.8,
+        "logreg_C": 0.01,
+        "random_state": 42,
+    },
+    {
+        "backtest_name": "elasticnet_alpha001_l1_09_logreg_C001_8m",
+        "alpha": 0.01,
+        "l1_ratio": 0.9,
+        "logreg_C": 0.01,
+        "random_state": 42,
+    },
 
-    {"backtest_name": "elasticnet_alpha01_l1_05_logreg_C005_6m", "alpha": 0.1, "l1_ratio": 0.5, "logreg_C": 0.05, "random_state": 42},
-    {"backtest_name": "elasticnet_alpha01_l1_05_logreg_C01_6m", "alpha": 0.1, "l1_ratio": 0.5, "logreg_C": 0.1, "random_state": 42},
+    # Combine higher L1 with stronger logreg regularisation
+    {
+        "backtest_name": "elasticnet_alpha001_l1_07_logreg_C0005_8m",
+        "alpha": 0.01,
+        "l1_ratio": 0.7,
+        "logreg_C": 0.005,
+        "random_state": 42,
+    },
+    {
+        "backtest_name": "elasticnet_alpha001_l1_08_logreg_C0005_8m",
+        "alpha": 0.01,
+        "l1_ratio": 0.8,
+        "logreg_C": 0.005,
+        "random_state": 42,
+    },
+    {
+        "backtest_name": "elasticnet_alpha001_l1_09_logreg_C0005_8m",
+        "alpha": 0.01,
+        "l1_ratio": 0.9,
+        "logreg_C": 0.005,
+        "random_state": 42,
+    },
+
+    # Lower alpha: check if previous alpha was too restrictive
+    {
+        "backtest_name": "elasticnet_alpha0005_l1_05_logreg_C001_8m",
+        "alpha": 0.005,
+        "l1_ratio": 0.5,
+        "logreg_C": 0.01,
+        "random_state": 42,
+    },
+    {
+        "backtest_name": "elasticnet_alpha0005_l1_07_logreg_C001_8m",
+        "alpha": 0.005,
+        "l1_ratio": 0.7,
+        "logreg_C": 0.01,
+        "random_state": 42,
+    },
+
+    # Higher alpha: more conservative linear regression side
+    {
+        "backtest_name": "elasticnet_alpha002_l1_05_logreg_C001_8m",
+        "alpha": 0.02,
+        "l1_ratio": 0.5,
+        "logreg_C": 0.01,
+        "random_state": 42,
+    },
+    {
+        "backtest_name": "elasticnet_alpha002_l1_07_logreg_C001_8m",
+        "alpha": 0.02,
+        "l1_ratio": 0.7,
+        "logreg_C": 0.01,
+        "random_state": 42,
+    },
+
+    # Very conservative logistic gate
+    {
+        "backtest_name": "elasticnet_alpha001_l1_05_logreg_C0001_8m",
+        "alpha": 0.01,
+        "l1_ratio": 0.5,
+        "logreg_C": 0.001,
+        "random_state": 42,
+    },
+    {
+        "backtest_name": "elasticnet_alpha001_l1_09_logreg_C0001_8m",
+        "alpha": 0.01,
+        "l1_ratio": 0.9,
+        "logreg_C": 0.001,
+        "random_state": 42,
+    },
 ]
 PRODUCTION_MODEL_PARAMS = PARAMETER_GRID[-1]
 
