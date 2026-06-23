@@ -1,283 +1,428 @@
+import os
 import pandas as pd
 import numpy as np
 
 
-# =========================
+# ============================================================
 # CONFIG
-# =========================
+# ============================================================
 
-INPUT_FILE = "outputs/backtest_results.csv"
-OUTPUT_FILE = "outputs/ensemble_backtest_results.csv"
+INPUT_FILE = os.getenv("BACKTEST_FILE", "outputs/backtest_results.csv")
+OUTPUT_FILE = os.getenv("ENSEMBLE_OUTPUT_FILE", "outputs/ensemble_backtest_results.csv")
+SUMMARY_FILE = os.getenv("ENSEMBLE_SUMMARY_FILE", "outputs/ensemble_summary.csv")
 
-DATE_COL = "date"
-MODEL_COL = "model_name"
+MODEL_ON_THRESHOLD = float(os.getenv("MODEL_ON_THRESHOLD", "0"))
 
-PRED_COL = "3d_return_pct_pred"
-ACTUAL_COL = "3d_return_pct_actual"
-
-# Minimum predicted return for a model to count as ON.
-# If your predicted returns are decimals, e.g. 0.006 = 0.6%, use 0.
-# If they are percentages, e.g. 0.6 = 0.6%, still use 0.
-MODEL_ON_THRESHOLD = 0
-
-# Ensemble rule mode:
-# "strict" = best precision, fewer buys
-# "score" = slightly more flexible
-ENSEMBLE_MODE = "strict"
+# Precision-first settings
+MIN_MODEL_ON_PRECISION = float(os.getenv("MIN_MODEL_ON_PRECISION", "0.57"))
+MIN_MODEL_LIFT = float(os.getenv("MIN_MODEL_LIFT", "0.04"))
+MIN_FAMILY_CONFIRMATIONS = int(os.getenv("MIN_FAMILY_CONFIRMATIONS", "3"))
+ENSEMBLE_SCORE_THRESHOLD = float(os.getenv("ENSEMBLE_SCORE_THRESHOLD", "6.5"))
 
 
-# =========================
-# MODEL GROUPS
-# =========================
+# ============================================================
+# COLUMN DETECTION
+# ============================================================
 
-EXTRATREES_BEST = [
-    "et_100trees_depth4_leaf20_log2_6m"
-]
+def find_first_existing_col(df, candidates, label):
+    for col in candidates:
+        if col in df.columns:
+            return col
 
-ELASTICNET_BEST_BLOCK = [
-    "elasticnet_alpha01_l1_05_logreg_C001_6m",
-    "elasticnet_alpha01_l1_05_logreg_C005_6m",
-    "elasticnet_alpha01_l1_05_logreg_C01_6m",
-    "elasticnet_alpha01_l1_09_logreg_C001_6m",
-    "elasticnet_alpha1_l1_01_logreg_C001_6m",
-    "elasticnet_alpha1_l1_05_logreg_C001_6m",
-]
-
-CATBOOST_CONFIRM = [
-    "cat_50trees_depth2_lr003_l2_5_6m",
-    "cat_100trees_depth3_lr003_l2_5_6m",
-]
-
-RANDOMFOREST_CONFIRM = [
-    "rf_100trees_depth5_leaf20_sqrt_6m",
-    "rf_100trees_depth6_leaf20_sqrt_6m",
-    "rf_100trees_depth4_leaf20_log2_6m",
-    "rf_100trees_depth4_leaf20_sqrt_6m",
-]
-
-XGBOOST_CONFIRM = [
-    "xgb_25trees_depth2_lr003_child5_sub08_col08_6m"
-]
-
-LIGHTGBM_CONFIRM = [
-    "lgbm_100trees_depth2_lr003_leaves3_child40_sub08_col08_6m",
-    "lgbm_125trees_depth2_lr004_leaves3_child40_sub08_col08_6m",
-]
-
-RIDGE_CONFIRM = [
-    "ridge_alpha001_logreg_C001_6m"
-]
-
-WEAK_ELASTICNET = [
-    "elasticnet_alpha001_l1_01_logreg_C001_6m",
-    "elasticnet_alpha001_l1_05_logreg_C001_6m",
-]
-
-WEAK_RIDGE = [
-    "ridge_alpha1_logreg_C001_6m",
-    "ridge_alpha1_logreg_C005_6m",
-    "ridge_alpha1_logreg_C01_6m",
-    "ridge_alpha10_logreg_C001_6m",
-    "ridge_alpha10_logreg_C005_6m",
-    "ridge_alpha10_logreg_C01_6m",
-    "ridge_alpha100_logreg_C001_6m",
-]
-
-WEAK_XGB = [
-    "xgb_50trees_depth2_lr003_child5_sub08_col08_6m"
-]
-
-
-# =========================
-# HELPERS
-# =========================
-
-def any_model_on(row, model_list):
-    existing = [m for m in model_list if m in row.index]
-    if not existing:
-        return False
-    return row[existing].fillna(False).astype(bool).any()
-
-
-def count_models_on(row, model_list):
-    existing = [m for m in model_list if m in row.index]
-    if not existing:
-        return 0
-    return int(row[existing].fillna(False).astype(bool).sum())
-
-
-def calculate_ensemble_score(row):
-    extratrees_on = any_model_on(row, EXTRATREES_BEST)
-    elasticnet_on = any_model_on(row, ELASTICNET_BEST_BLOCK)
-    cat_on = any_model_on(row, CATBOOST_CONFIRM)
-    rf_on = any_model_on(row, RANDOMFOREST_CONFIRM)
-    xgb_on = any_model_on(row, XGBOOST_CONFIRM)
-    lgbm_on = any_model_on(row, LIGHTGBM_CONFIRM)
-    ridge_on = any_model_on(row, RIDGE_CONFIRM)
-
-    weak_elasticnet_on = any_model_on(row, WEAK_ELASTICNET)
-    weak_ridge_on = any_model_on(row, WEAK_RIDGE)
-    weak_xgb_on = any_model_on(row, WEAK_XGB)
-
-    score = 0
-
-    score += 3.0 if extratrees_on else 0
-    score += 3.0 if elasticnet_on else 0
-    score += 2.0 if cat_on else 0
-    score += 2.0 if rf_on else 0
-    score += 1.5 if xgb_on else 0
-    score += 1.0 if lgbm_on else 0
-    score += 1.0 if ridge_on else 0
-
-    score -= 2.0 if weak_elasticnet_on else 0
-    score -= 2.0 if weak_ridge_on else 0
-    score -= 1.5 if weak_xgb_on else 0
-
-    return score
-
-
-def strict_ensemble_buy(row):
-    extratrees_on = any_model_on(row, EXTRATREES_BEST)
-    elasticnet_on = any_model_on(row, ELASTICNET_BEST_BLOCK)
-
-    cat_on = any_model_on(row, CATBOOST_CONFIRM)
-    rf_on = any_model_on(row, RANDOMFOREST_CONFIRM)
-    xgb_on = any_model_on(row, XGBOOST_CONFIRM)
-
-    weak_count = 0
-    weak_count += int(any_model_on(row, WEAK_ELASTICNET))
-    weak_count += int(any_model_on(row, WEAK_RIDGE))
-    weak_count += int(any_model_on(row, WEAK_XGB))
-
-    confirmation_on = cat_on or rf_on or xgb_on
-
-    return (
-        extratrees_on
-        and elasticnet_on
-        and confirmation_on
-        and weak_count < 2
+    raise ValueError(
+        f"Could not find {label}. Tried: {candidates}. "
+        f"Available columns: {list(df.columns)}"
     )
 
 
-# =========================
-# LOAD DATA
-# =========================
-
-df = pd.read_csv(INPUT_FILE)
-
-required_cols = [DATE_COL, MODEL_COL, PRED_COL, ACTUAL_COL]
-missing_cols = [c for c in required_cols if c not in df.columns]
-
-if missing_cols:
-    raise ValueError(f"Missing required columns: {missing_cols}")
-
-df[DATE_COL] = pd.to_datetime(df[DATE_COL])
-
-# Model ON means predicted 3d return is above threshold
-df["model_on"] = df[PRED_COL] > MODEL_ON_THRESHOLD
-
-# Actual profitable result
-df["actual_profitable"] = df[ACTUAL_COL] > 0
-
-
-# =========================
-# PIVOT MODEL SIGNALS
-# =========================
-
-signal_wide = (
-    df.pivot_table(
-        index=DATE_COL,
-        columns=MODEL_COL,
-        values="model_on",
-        aggfunc="max"
+def detect_columns(df):
+    date_col = find_first_existing_col(
+        df,
+        [
+            "date",
+            "Date",
+            "forecast_date",
+            "prediction_date",
+            "test_date",
+            "test_start",
+            "test_start_date",
+            "backtest_date",
+            "run_date",
+            "target_date",
+        ],
+        "date column",
     )
-    .fillna(False)
-)
 
-actual_by_date = (
-    df.groupby(DATE_COL, as_index=True)
-      .agg(
-          actual_3d_return=(ACTUAL_COL, "mean"),
-          actual_profitable=("actual_profitable", "max")
-      )
-)
+    # This is your high-level model family column:
+    # e.g. MODEL_NAME = ExtraTrees, RandomForest, LightGBM, XGBoost
+    model_family_col = find_first_existing_col(
+        df,
+        [
+            "MODEL_NAME",
+            "model_name",
+            "model_family",
+            "family",
+        ],
+        "model family column",
+    )
 
-ensemble = signal_wide.copy()
+    # This is the detailed variant name, if available.
+    # e.g. et_100trees_depth4_leaf20_log2_6m
+    model_variant_col = None
+    for col in [
+        "backtest_name",
+        "model_variant",
+        "variant_name",
+        "MODEL_VARIANT",
+        "model_id",
+    ]:
+        if col in df.columns:
+            model_variant_col = col
+            break
 
-ensemble["ensemble_score"] = ensemble.apply(calculate_ensemble_score, axis=1)
-ensemble["strict_ensemble_buy"] = ensemble.apply(strict_ensemble_buy, axis=1)
+    if model_variant_col is None:
+        model_variant_col = model_family_col
 
-if ENSEMBLE_MODE == "strict":
-    ensemble["ensemble_buy"] = ensemble["strict_ensemble_buy"]
-elif ENSEMBLE_MODE == "score":
-    ensemble["ensemble_buy"] = ensemble["ensemble_score"] >= 8
-else:
-    raise ValueError("ENSEMBLE_MODE must be either 'strict' or 'score'.")
+    pred_col = find_first_existing_col(
+        df,
+        [
+            "3d_return_pct_pred",
+            "Average of 3d_return_pct_pred",
+            "return_pct_pred",
+            "predicted_return",
+            "prediction",
+            "y_pred",
+            "pred",
+        ],
+        "prediction column",
+    )
 
-ensemble = ensemble.join(actual_by_date, how="left")
+    actual_col = find_first_existing_col(
+        df,
+        [
+            "3d_return_pct_actual",
+            "Average of 3d_return_pct_actual",
+            "return_pct_actual",
+            "actual_return",
+            "actual",
+            "y_actual",
+            "target",
+        ],
+        "actual return column",
+    )
 
-
-# =========================
-# PERFORMANCE SUMMARY
-# =========================
-
-buy_days = ensemble[ensemble["ensemble_buy"] == True]
-no_buy_days = ensemble[ensemble["ensemble_buy"] == False]
-
-summary = {
-    "ensemble_mode": ENSEMBLE_MODE,
-    "total_days": len(ensemble),
-    "buy_days": len(buy_days),
-    "no_buy_days": len(no_buy_days),
-    "buy_rate": len(buy_days) / len(ensemble) if len(ensemble) else np.nan,
-
-    "buy_profitable_days": int(buy_days["actual_profitable"].sum()) if len(buy_days) else 0,
-    "buy_profit_pct": buy_days["actual_profitable"].mean() if len(buy_days) else np.nan,
-    "no_buy_profit_pct": no_buy_days["actual_profitable"].mean() if len(no_buy_days) else np.nan,
-
-    "avg_return_when_buy": buy_days["actual_3d_return"].mean() if len(buy_days) else np.nan,
-    "median_return_when_buy": buy_days["actual_3d_return"].median() if len(buy_days) else np.nan,
-    "worst_return_when_buy": buy_days["actual_3d_return"].min() if len(buy_days) else np.nan,
-    "best_return_when_buy": buy_days["actual_3d_return"].max() if len(buy_days) else np.nan,
-
-    "avg_return_when_no_buy": no_buy_days["actual_3d_return"].mean() if len(no_buy_days) else np.nan,
-    "missed_profitable_days": int(no_buy_days["actual_profitable"].sum()) if len(no_buy_days) else 0,
-}
-
-summary_df = pd.DataFrame([summary])
-
-
-# =========================
-# EXTRA DIAGNOSTICS
-# =========================
-
-ensemble["position_return"] = np.where(
-    ensemble["ensemble_buy"],
-    ensemble["actual_3d_return"],
-    0
-)
-
-ensemble["cumulative_strategy_return"] = ensemble["position_return"].cumsum()
-ensemble["cumulative_buy_and_hold_3d_return"] = ensemble["actual_3d_return"].cumsum()
-
-ensemble["equity_curve"] = (1 + ensemble["position_return"]).cumprod()
-
-ensemble["running_peak"] = ensemble["equity_curve"].cummax()
-ensemble["drawdown"] = ensemble["equity_curve"] / ensemble["running_peak"] - 1
-
-max_drawdown = ensemble["drawdown"].min()
-summary_df["max_drawdown"] = max_drawdown
+    return date_col, model_family_col, model_variant_col, pred_col, actual_col
 
 
-# =========================
-# SAVE OUTPUTS
-# =========================
+# ============================================================
+# PERFORMANCE TABLE
+# ============================================================
 
-ensemble.reset_index().to_csv(OUTPUT_FILE, index=False)
-summary_df.to_csv("outputs/ensemble_summary.csv", index=False)
+def build_family_performance_table(df, date_col, model_family_col, pred_col, actual_col):
+    df = df.copy()
 
-print("\nENSEMBLE SUMMARY")
-print(summary_df.T)
+    df["model_on"] = df[pred_col] > MODEL_ON_THRESHOLD
+    df["actual_profitable"] = df[actual_col] > 0
 
-print(f"\nSaved detailed ensemble backtest to: {OUTPUT_FILE}")
-print("Saved summary to: outputs/ensemble_summary.csv")
+    rows = []
+
+    for model_family, g in df.groupby(model_family_col):
+        model_on = g[g["model_on"]]
+        model_off = g[~g["model_on"]]
+
+        model_on_precision = model_on["actual_profitable"].mean() if len(model_on) else np.nan
+        model_off_precision = model_off["actual_profitable"].mean() if len(model_off) else np.nan
+
+        precision_lift = (
+            model_on_precision - model_off_precision
+            if pd.notna(model_on_precision) and pd.notna(model_off_precision)
+            else np.nan
+        )
+
+        rows.append(
+            {
+                "model_family": model_family,
+                "total_rows": len(g),
+                "model_on_days": len(model_on),
+                "model_off_days": len(model_off),
+                "model_on_precision": model_on_precision,
+                "model_off_precision": model_off_precision,
+                "precision_lift": precision_lift,
+                "avg_return_when_on": model_on[actual_col].mean() if len(model_on) else np.nan,
+                "worst_return_when_on": model_on[actual_col].min() if len(model_on) else np.nan,
+            }
+        )
+
+    perf = pd.DataFrame(rows)
+
+    perf = perf.sort_values(
+        ["model_on_precision", "precision_lift", "avg_return_when_on"],
+        ascending=[False, False, False],
+    )
+
+    return perf
+
+
+def select_eligible_families(perf):
+    eligible = perf[
+        (perf["model_on_precision"] >= MIN_MODEL_ON_PRECISION)
+        & (perf["precision_lift"] >= MIN_MODEL_LIFT)
+        & (perf["model_on_days"] > 0)
+    ].copy()
+
+    if eligible.empty:
+        raise ValueError(
+            "No eligible model families selected. "
+            "Lower MIN_MODEL_ON_PRECISION or MIN_MODEL_LIFT."
+        )
+
+    eligible["family_weight"] = (
+        (eligible["model_on_precision"] - 0.5) * 10
+        + eligible["precision_lift"] * 5
+    )
+
+    eligible["family_weight"] = eligible["family_weight"].clip(lower=0.5, upper=3.0)
+
+    return eligible
+
+
+# ============================================================
+# ENSEMBLE BUILDING
+# ============================================================
+
+def build_ensemble(df, date_col, model_family_col, pred_col, actual_col, eligible_families):
+    df = df.copy()
+
+    eligible_family_names = eligible_families["model_family"].tolist()
+
+    family_to_weight = dict(
+        zip(eligible_families["model_family"], eligible_families["family_weight"])
+    )
+
+    anchor_families = (
+        eligible_families
+        .sort_values("model_on_precision", ascending=False)
+        .head(2)["model_family"]
+        .tolist()
+    )
+
+    df["model_on"] = df[pred_col] > MODEL_ON_THRESHOLD
+    df["actual_profitable"] = df[actual_col] > 0
+
+    df_eligible = df[df[model_family_col].isin(eligible_family_names)].copy()
+
+    # One row per date + family.
+    # Family is ON if any model row within that family is ON that day.
+    family_signal = (
+        df_eligible
+        .groupby([date_col, model_family_col], as_index=False)
+        .agg(family_on=("model_on", "max"))
+    )
+
+    signal_wide = (
+        family_signal
+        .pivot_table(
+            index=date_col,
+            columns=model_family_col,
+            values="family_on",
+            aggfunc="max",
+        )
+        .fillna(False)
+        .astype(bool)
+    )
+
+    actual_by_date = (
+        df.groupby(date_col, as_index=True)
+        .agg(
+            actual_3d_return=(actual_col, "mean"),
+            actual_profitable=("actual_profitable", "max"),
+            family_count=(model_family_col, "nunique"),
+        )
+    )
+
+    ensemble_rows = []
+
+    for dt, row in signal_wide.iterrows():
+        active_families = [fam for fam in signal_wide.columns if bool(row[fam])]
+
+        ensemble_score = sum(family_to_weight[fam] for fam in active_families)
+        active_family_count = len(active_families)
+
+        anchor_on = any(fam in active_families for fam in anchor_families)
+
+        ensemble_buy = (
+            active_family_count >= MIN_FAMILY_CONFIRMATIONS
+            and ensemble_score >= ENSEMBLE_SCORE_THRESHOLD
+            and anchor_on
+        )
+
+        ensemble_rows.append(
+            {
+                date_col: dt,
+                "ensemble_buy": ensemble_buy,
+                "ensemble_score": ensemble_score,
+                "active_family_count": active_family_count,
+                "active_families": ",".join(active_families),
+                "anchor_families": ",".join(anchor_families),
+                "anchor_on": anchor_on,
+            }
+        )
+
+    ensemble = pd.DataFrame(ensemble_rows).set_index(date_col)
+    ensemble = ensemble.join(actual_by_date, how="left")
+
+    ensemble["strategy_3d_return"] = np.where(
+        ensemble["ensemble_buy"],
+        ensemble["actual_3d_return"],
+        0.0,
+    )
+
+    ensemble["buy_and_hold_3d_return"] = ensemble["actual_3d_return"]
+
+    ensemble["strategy_equity"] = (1.0 + ensemble["strategy_3d_return"]).cumprod()
+    ensemble["buy_and_hold_equity"] = (1.0 + ensemble["buy_and_hold_3d_return"]).cumprod()
+
+    ensemble["strategy_running_peak"] = ensemble["strategy_equity"].cummax()
+    ensemble["strategy_drawdown"] = (
+        ensemble["strategy_equity"] / ensemble["strategy_running_peak"] - 1.0
+    )
+
+    ensemble["buy_and_hold_running_peak"] = ensemble["buy_and_hold_equity"].cummax()
+    ensemble["buy_and_hold_drawdown"] = (
+        ensemble["buy_and_hold_equity"] / ensemble["buy_and_hold_running_peak"] - 1.0
+    )
+
+    return ensemble
+
+
+# ============================================================
+# SUMMARY
+# ============================================================
+
+def build_summary(ensemble, eligible_families):
+    buy_days = ensemble[ensemble["ensemble_buy"]].copy()
+    no_buy_days = ensemble[~ensemble["ensemble_buy"]].copy()
+
+    summary = {
+        "total_days": len(ensemble),
+        "buy_days": len(buy_days),
+        "no_buy_days": len(no_buy_days),
+        "buy_rate": len(buy_days) / len(ensemble) if len(ensemble) else np.nan,
+
+        "eligible_family_count": len(eligible_families),
+        "eligible_families": ",".join(eligible_families["model_family"].astype(str).tolist()),
+
+        "min_model_on_precision": MIN_MODEL_ON_PRECISION,
+        "min_model_lift": MIN_MODEL_LIFT,
+        "min_family_confirmations": MIN_FAMILY_CONFIRMATIONS,
+        "ensemble_score_threshold": ENSEMBLE_SCORE_THRESHOLD,
+
+        "buy_profitable_days": int(buy_days["actual_profitable"].sum()) if len(buy_days) else 0,
+        "buy_profit_pct": buy_days["actual_profitable"].mean() if len(buy_days) else np.nan,
+
+        "no_buy_profitable_days": int(no_buy_days["actual_profitable"].sum()) if len(no_buy_days) else 0,
+        "no_buy_profit_pct": no_buy_days["actual_profitable"].mean() if len(no_buy_days) else np.nan,
+
+        "avg_return_when_buy": buy_days["actual_3d_return"].mean() if len(buy_days) else np.nan,
+        "median_return_when_buy": buy_days["actual_3d_return"].median() if len(buy_days) else np.nan,
+        "worst_return_when_buy": buy_days["actual_3d_return"].min() if len(buy_days) else np.nan,
+        "best_return_when_buy": buy_days["actual_3d_return"].max() if len(buy_days) else np.nan,
+
+        "avg_return_when_no_buy": no_buy_days["actual_3d_return"].mean() if len(no_buy_days) else np.nan,
+
+        "strategy_total_return": ensemble["strategy_equity"].iloc[-1] - 1.0 if len(ensemble) else np.nan,
+        "buy_and_hold_total_return": ensemble["buy_and_hold_equity"].iloc[-1] - 1.0 if len(ensemble) else np.nan,
+
+        "strategy_max_drawdown": ensemble["strategy_drawdown"].min() if len(ensemble) else np.nan,
+        "buy_and_hold_max_drawdown": ensemble["buy_and_hold_drawdown"].min() if len(ensemble) else np.nan,
+
+        "avg_ensemble_score": ensemble["ensemble_score"].mean() if len(ensemble) else np.nan,
+        "avg_ensemble_score_when_buy": buy_days["ensemble_score"].mean() if len(buy_days) else np.nan,
+    }
+
+    return pd.DataFrame([summary])
+
+
+# ============================================================
+# MAIN
+# ============================================================
+
+def main():
+    if not os.path.exists(INPUT_FILE):
+        raise FileNotFoundError(f"Input file not found: {INPUT_FILE}")
+
+    df = pd.read_csv(INPUT_FILE)
+
+    date_col, model_family_col, model_variant_col, pred_col, actual_col = detect_columns(df)
+
+    print("Detected columns:")
+    print(f"  DATE_COL          = {date_col}")
+    print(f"  MODEL_FAMILY_COL  = {model_family_col}")
+    print(f"  MODEL_VARIANT_COL = {model_variant_col}")
+    print(f"  PRED_COL          = {pred_col}")
+    print(f"  ACTUAL_COL        = {actual_col}")
+
+    df[date_col] = pd.to_datetime(df[date_col], errors="coerce")
+    df[pred_col] = pd.to_numeric(df[pred_col], errors="coerce")
+    df[actual_col] = pd.to_numeric(df[actual_col], errors="coerce")
+
+    df = df.dropna(subset=[date_col, model_family_col, pred_col, actual_col]).copy()
+
+    if df.empty:
+        raise ValueError("No valid rows left after cleaning.")
+
+    family_perf = build_family_performance_table(
+        df=df,
+        date_col=date_col,
+        model_family_col=model_family_col,
+        pred_col=pred_col,
+        actual_col=actual_col,
+    )
+
+    eligible_families = select_eligible_families(family_perf)
+
+    print("\nSelected eligible model families:")
+    print(
+        eligible_families[
+            [
+                "model_family",
+                "model_on_days",
+                "model_on_precision",
+                "model_off_precision",
+                "precision_lift",
+                "avg_return_when_on",
+                "family_weight",
+            ]
+        ].to_string(index=False)
+    )
+
+    ensemble = build_ensemble(
+        df=df,
+        date_col=date_col,
+        model_family_col=model_family_col,
+        pred_col=pred_col,
+        actual_col=actual_col,
+        eligible_families=eligible_families,
+    )
+
+    summary_df = build_summary(ensemble, eligible_families)
+
+    os.makedirs(os.path.dirname(OUTPUT_FILE), exist_ok=True)
+    os.makedirs(os.path.dirname(SUMMARY_FILE), exist_ok=True)
+
+    ensemble.reset_index().rename(columns={date_col: "date"}).to_csv(OUTPUT_FILE, index=False)
+    summary_df.to_csv(SUMMARY_FILE, index=False)
+    family_perf.to_csv("outputs/ensemble_family_performance.csv", index=False)
+    eligible_families.to_csv("outputs/ensemble_selected_families.csv", index=False)
+
+    print("\nENSEMBLE SUMMARY")
+    print(summary_df.T)
+
+    print(f"\nSaved ensemble results to: {OUTPUT_FILE}")
+    print(f"Saved ensemble summary to: {SUMMARY_FILE}")
+    print("Saved family performance to: outputs/ensemble_family_performance.csv")
+    print("Saved selected families to: outputs/ensemble_selected_families.csv")
+
+
+if __name__ == "__main__":
+    main()
