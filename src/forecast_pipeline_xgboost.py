@@ -37,7 +37,7 @@ LAG_DAYS = list(range(1, 53))
 # New cumulative return features requested
 RETURN_WINDOWS = [5, 7, 10, 14, 20]
 
-BACKTEST_START_DATE = "2026-01-01"
+BACKTEST_START_DATE = "2025-11-01"
 BACKTEST_END_DATE = "2026-05-31"
 
 OUTPUT_DIR = "outputs"
@@ -58,7 +58,7 @@ MODEL_NAME = os.getenv("MODEL_NAME", "XGBoost")
 PARAMETER_GRID = [
     # Keep current best as benchmark
     {
-        "backtest_name": "xgb_25trees_depth2_lr003_child5_sub08_col08_6m",
+        "backtest_name": "xgb_25trees_depth2_lr003_child5_sub08_col08_8m",
         "n_estimators": 25,
         "max_depth": 2,
         "learning_rate": 0.003,
@@ -72,7 +72,7 @@ PARAMETER_GRID = [
 
     # Fewer trees / more selective
     {
-        "backtest_name": "xgb_15trees_depth2_lr003_child5_sub08_col08_6m",
+        "backtest_name": "xgb_15trees_depth2_lr003_child5_sub08_col08_8m",
         "n_estimators": 15,
         "max_depth": 2,
         "learning_rate": 0.003,
@@ -84,7 +84,7 @@ PARAMETER_GRID = [
         "random_state": 42,
     },
     {
-        "backtest_name": "xgb_20trees_depth2_lr003_child5_sub08_col08_6m",
+        "backtest_name": "xgb_20trees_depth2_lr003_child5_sub08_col08_8m",
         "n_estimators": 20,
         "max_depth": 2,
         "learning_rate": 0.003,
@@ -98,7 +98,7 @@ PARAMETER_GRID = [
 
     # Slightly deeper but regularized
     {
-        "backtest_name": "xgb_25trees_depth3_lr003_child5_sub08_col08_6m",
+        "backtest_name": "xgb_25trees_depth3_lr003_child5_sub08_col08_8m",
         "n_estimators": 25,
         "max_depth": 3,
         "learning_rate": 0.003,
@@ -110,7 +110,7 @@ PARAMETER_GRID = [
         "random_state": 42,
     },
     {
-        "backtest_name": "xgb_40trees_depth3_lr003_child5_sub08_col08_6m",
+        "backtest_name": "xgb_40trees_depth3_lr003_child5_sub08_col08_8m",
         "n_estimators": 40,
         "max_depth": 3,
         "learning_rate": 0.003,
@@ -124,7 +124,7 @@ PARAMETER_GRID = [
 
     # Higher child weight = more conservative splits
     {
-        "backtest_name": "xgb_25trees_depth2_lr003_child7_sub08_col08_6m",
+        "backtest_name": "xgb_25trees_depth2_lr003_child7_sub08_col08_8m",
         "n_estimators": 25,
         "max_depth": 2,
         "learning_rate": 0.003,
@@ -136,7 +136,7 @@ PARAMETER_GRID = [
         "random_state": 42,
     },
     {
-        "backtest_name": "xgb_25trees_depth2_lr003_child10_sub08_col08_6m",
+        "backtest_name": "xgb_25trees_depth2_lr003_child10_sub08_col08_8m",
         "n_estimators": 25,
         "max_depth": 2,
         "learning_rate": 0.003,
@@ -150,7 +150,7 @@ PARAMETER_GRID = [
 
     # More regularization
     {
-        "backtest_name": "xgb_25trees_depth2_lr003_child5_sub08_col08_l2_3_6m",
+        "backtest_name": "xgb_25trees_depth2_lr003_child5_sub08_col08_l2_3_8m",
         "n_estimators": 25,
         "max_depth": 2,
         "learning_rate": 0.003,
@@ -162,7 +162,7 @@ PARAMETER_GRID = [
         "random_state": 42,
     },
     {
-        "backtest_name": "xgb_25trees_depth2_lr003_child5_sub08_col08_l1_01_l2_3_6m",
+        "backtest_name": "xgb_25trees_depth2_lr003_child5_sub08_col08_l1_01_l2_3_8m",
         "n_estimators": 25,
         "max_depth": 2,
         "learning_rate": 0.003,
@@ -176,7 +176,7 @@ PARAMETER_GRID = [
 
     # More randomness, less overfit
     {
-        "backtest_name": "xgb_25trees_depth2_lr003_child5_sub07_col08_6m",
+        "backtest_name": "xgb_25trees_depth2_lr003_child5_sub07_col08_8m",
         "n_estimators": 25,
         "max_depth": 2,
         "learning_rate": 0.003,
@@ -188,7 +188,7 @@ PARAMETER_GRID = [
         "random_state": 42,
     },
     {
-        "backtest_name": "xgb_25trees_depth2_lr003_child5_sub08_col07_6m",
+        "backtest_name": "xgb_25trees_depth2_lr003_child5_sub08_col07_8m",
         "n_estimators": 25,
         "max_depth": 2,
         "learning_rate": 0.003,
