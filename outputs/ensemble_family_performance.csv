@@ -1,4 +1,4 @@
-model_family,total_rows,model_on_days,model_off_days,model_on_precision,model_off_precision,precision_lift,avg_return_when_on,worst_return_when_on
+model_family,total_rows,model_on_rows,model_off_rows,model_on_precision,model_off_precision,precision_lift,avg_return_when_on,worst_return_when_on
 ExtraTrees,3264,1579,1685,0.6022799240025333,0.39465875370919884,0.20762117029333443,0.008457197098846285,-0.1356519514851722
 ElasticNet,2040,938,1102,0.5980810234541578,0.4074410163339383,0.1906400071202195,0.008403331071299584,-0.1464293779989501
 RandomForest,1632,827,805,0.5646916565900847,0.4236024844720497,0.141089172118035,0.007065093524956278,-0.1464293779989501
