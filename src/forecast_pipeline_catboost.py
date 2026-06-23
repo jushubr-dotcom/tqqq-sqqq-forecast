@@ -34,7 +34,7 @@ LAG_DAYS = list(range(1, 53))
 
 RETURN_WINDOWS = [5, 7, 10, 14, 20]
 
-BACKTEST_START_DATE = "2026-01-01"
+BACKTEST_START_DATE = "2025-11-01"
 BACKTEST_END_DATE = "2026-05-31"
 
 OUTPUT_DIR = "outputs"
@@ -54,7 +54,7 @@ MODEL_NAME = os.getenv("MODEL_NAME", "CatBoost")
 
 PARAMETER_GRID = [
     {
-        "backtest_name": "cat_75trees_depth3_lr003_l2_5_6m",
+        "backtest_name": "cat_75trees_depth3_lr003_l2_5_8m",
         "iterations": 75,
         "depth": 3,
         "learning_rate": 0.03,
@@ -63,7 +63,7 @@ PARAMETER_GRID = [
         "verbose": False,
     },
     {
-        "backtest_name": "cat_100trees_depth3_lr002_l2_5_6m",
+        "backtest_name": "cat_100trees_depth3_lr002_l2_5_8m",
         "iterations": 100,
         "depth": 3,
         "learning_rate": 0.02,
@@ -81,7 +81,7 @@ PARAMETER_GRID = [
         "verbose": False,
     },
     {
-        "backtest_name": "cat_100trees_depth3_lr003_l2_5_6m",
+        "backtest_name": "cat_100trees_depth3_lr003_l2_5_8m",
         "iterations": 100,
         "depth": 3,
         "learning_rate": 0.03,
@@ -90,7 +90,7 @@ PARAMETER_GRID = [
         "verbose": False,
     },
     {
-        "backtest_name": "cat_100trees_depth3_lr003_l2_7_6m",
+        "backtest_name": "cat_100trees_depth3_lr003_l2_7_8m",
         "iterations": 100,
         "depth": 3,
         "learning_rate": 0.03,
@@ -99,7 +99,7 @@ PARAMETER_GRID = [
         "verbose": False,
     },
     {
-        "backtest_name": "cat_125trees_depth3_lr003_l2_5_6m",
+        "backtest_name": "cat_125trees_depth3_lr003_l2_5_8m",
         "iterations": 125,
         "depth": 3,
         "learning_rate": 0.03,
@@ -108,7 +108,7 @@ PARAMETER_GRID = [
         "verbose": False,
     },
     {
-        "backtest_name": "cat_150trees_depth3_lr003_l2_5_6m",
+        "backtest_name": "cat_150trees_depth3_lr003_l2_5_8m",
         "iterations": 150,
         "depth": 3,
         "learning_rate": 0.03,
@@ -117,7 +117,7 @@ PARAMETER_GRID = [
         "verbose": False,
     },
     {
-        "backtest_name": "cat_100trees_depth4_lr003_l2_5_6m",
+        "backtest_name": "cat_100trees_depth4_lr003_l2_5_8m",
         "iterations": 100,
         "depth": 4,
         "learning_rate": 0.03,
