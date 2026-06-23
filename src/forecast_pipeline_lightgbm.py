@@ -34,7 +34,7 @@ LAG_DAYS = list(range(1, 53))
 
 RETURN_WINDOWS = [5, 7, 10, 14, 20]
 
-BACKTEST_START_DATE = "2026-01-01"
+BACKTEST_START_DATE = "2025-11-01"
 BACKTEST_END_DATE = "2026-05-31"
 
 OUTPUT_DIR = "outputs"
@@ -55,7 +55,7 @@ MODEL_NAME = os.getenv("MODEL_NAME", "LightGBM")
 PARAMETER_GRID = [
     # Keep current best as benchmark
     {
-        "backtest_name": "lgbm_100trees_depth2_lr003_leaves3_child40_sub08_col08_6m",
+        "backtest_name": "lgbm_100trees_depth2_lr003_leaves3_child40_sub08_col08_8m",
         "n_estimators": 100,
         "max_depth": 2,
         "num_leaves": 3,
@@ -68,7 +68,7 @@ PARAMETER_GRID = [
 
     # Slightly more trees, same conservative structure
     {
-        "backtest_name": "lgbm_150trees_depth2_lr003_leaves3_child40_sub08_col08_6m",
+        "backtest_name": "lgbm_150trees_depth2_lr003_leaves3_child40_sub08_col08_8m",
         "n_estimators": 150,
         "max_depth": 2,
         "num_leaves": 3,
@@ -79,9 +79,9 @@ PARAMETER_GRID = [
         "random_state": 42,
     },
 
-    # Test higher learning rate with current best structure
+    # Higher learning rate, same simple structure
     {
-        "backtest_name": "lgbm_100trees_depth2_lr005_leaves3_child40_sub08_col08_6m",
+        "backtest_name": "lgbm_100trees_depth2_lr005_leaves3_child40_sub08_col08_8m",
         "n_estimators": 100,
         "max_depth": 2,
         "num_leaves": 3,
@@ -94,7 +94,18 @@ PARAMETER_GRID = [
 
     # Depth 3, still controlled
     {
-        "backtest_name": "lgbm_100trees_depth3_lr003_leaves5_child40_sub08_col08_6m",
+        "backtest_name": "lgbm_75trees_depth3_lr003_leaves5_child40_sub08_col08_8m",
+        "n_estimators": 75,
+        "max_depth": 3,
+        "num_leaves": 5,
+        "learning_rate": 0.003,
+        "min_child_samples": 40,
+        "subsample": 0.8,
+        "colsample_bytree": 0.8,
+        "random_state": 42,
+    },
+    {
+        "backtest_name": "lgbm_100trees_depth3_lr003_leaves5_child40_sub08_col08_8m",
         "n_estimators": 100,
         "max_depth": 3,
         "num_leaves": 5,
@@ -105,7 +116,20 @@ PARAMETER_GRID = [
         "random_state": 42,
     },
     {
-        "backtest_name": "lgbm_100trees_depth3_lr005_leaves5_child40_sub08_col08_6m",
+        "backtest_name": "lgbm_125trees_depth3_lr003_leaves5_child40_sub08_col08_8m",
+        "n_estimators": 125,
+        "max_depth": 3,
+        "num_leaves": 5,
+        "learning_rate": 0.003,
+        "min_child_samples": 40,
+        "subsample": 0.8,
+        "colsample_bytree": 0.8,
+        "random_state": 42,
+    },
+
+    # Depth 3 with slightly higher learning rate
+    {
+        "backtest_name": "lgbm_100trees_depth3_lr005_leaves5_child40_sub08_col08_8m",
         "n_estimators": 100,
         "max_depth": 3,
         "num_leaves": 5,
@@ -116,9 +140,9 @@ PARAMETER_GRID = [
         "random_state": 42,
     },
 
-    # Try leaves 7 but still depth 3
+    # More leaves, still depth 3
     {
-        "backtest_name": "lgbm_100trees_depth3_lr003_leaves7_child40_sub08_col08_6m",
+        "backtest_name": "lgbm_100trees_depth3_lr003_leaves7_child40_sub08_col08_8m",
         "n_estimators": 100,
         "max_depth": 3,
         "num_leaves": 7,
@@ -128,21 +152,32 @@ PARAMETER_GRID = [
         "colsample_bytree": 0.8,
         "random_state": 42,
     },
-
-    # Test child regularisation
     {
-        "backtest_name": "lgbm_100trees_depth3_lr003_leaves5_child30_sub08_col08_6m",
+        "backtest_name": "lgbm_100trees_depth3_lr005_leaves7_child40_sub08_col08_8m",
+        "n_estimators": 100,
+        "max_depth": 3,
+        "num_leaves": 7,
+        "learning_rate": 0.005,
+        "min_child_samples": 40,
+        "subsample": 0.8,
+        "colsample_bytree": 0.8,
+        "random_state": 42,
+    },
+
+    # Child sample sweep around depth 3
+    {
+        "backtest_name": "lgbm_100trees_depth3_lr003_leaves5_child25_sub08_col08_8m",
         "n_estimators": 100,
         "max_depth": 3,
         "num_leaves": 5,
         "learning_rate": 0.003,
-        "min_child_samples": 30,
+        "min_child_samples": 25,
         "subsample": 0.8,
         "colsample_bytree": 0.8,
         "random_state": 42,
     },
     {
-        "backtest_name": "lgbm_100trees_depth3_lr003_leaves5_child50_sub08_col08_6m",
+        "backtest_name": "lgbm_100trees_depth3_lr003_leaves5_child50_sub08_col08_8m",
         "n_estimators": 100,
         "max_depth": 3,
         "num_leaves": 5,
@@ -153,9 +188,9 @@ PARAMETER_GRID = [
         "random_state": 42,
     },
 
-    # More randomness, maybe better generalisation
+    # More randomness / regularisation
     {
-        "backtest_name": "lgbm_100trees_depth3_lr003_leaves5_child40_sub07_col08_6m",
+        "backtest_name": "lgbm_100trees_depth3_lr003_leaves5_child40_sub07_col08_8m",
         "n_estimators": 100,
         "max_depth": 3,
         "num_leaves": 5,
@@ -166,7 +201,7 @@ PARAMETER_GRID = [
         "random_state": 42,
     },
     {
-        "backtest_name": "lgbm_100trees_depth3_lr003_leaves5_child40_sub08_col07_6m",
+        "backtest_name": "lgbm_100trees_depth3_lr003_leaves5_child40_sub08_col07_8m",
         "n_estimators": 100,
         "max_depth": 3,
         "num_leaves": 5,
@@ -174,6 +209,33 @@ PARAMETER_GRID = [
         "min_child_samples": 40,
         "subsample": 0.8,
         "colsample_bytree": 0.7,
+        "random_state": 42,
+    },
+
+    # Light regularisation
+    {
+        "backtest_name": "lgbm_100trees_depth3_lr003_leaves5_child40_sub08_col08_l2_1_8m",
+        "n_estimators": 100,
+        "max_depth": 3,
+        "num_leaves": 5,
+        "learning_rate": 0.003,
+        "min_child_samples": 40,
+        "subsample": 0.8,
+        "colsample_bytree": 0.8,
+        "reg_lambda": 1.0,
+        "random_state": 42,
+    },
+    {
+        "backtest_name": "lgbm_100trees_depth3_lr003_leaves5_child40_sub08_col08_l1_01_l2_1_8m",
+        "n_estimators": 100,
+        "max_depth": 3,
+        "num_leaves": 5,
+        "learning_rate": 0.003,
+        "min_child_samples": 40,
+        "subsample": 0.8,
+        "colsample_bytree": 0.8,
+        "reg_alpha": 0.1,
+        "reg_lambda": 1.0,
         "random_state": 42,
     },
 ]
