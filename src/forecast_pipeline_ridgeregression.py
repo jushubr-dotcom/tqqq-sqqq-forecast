@@ -35,7 +35,7 @@ LAG_DAYS = list(range(1, 53))
 
 RETURN_WINDOWS = [5, 7, 10, 14, 20]
 
-BACKTEST_START_DATE = "2026-01-01"
+BACKTEST_START_DATE = "2025-11-01"
 BACKTEST_END_DATE = "2026-05-31"
 
 OUTPUT_DIR = "outputs"
@@ -54,18 +54,107 @@ MODEL_NAME = os.getenv("MODEL_NAME", "Ridge")
 # ============================================================
 
 PARAMETER_GRID = [
-    {"backtest_name": "ridge_alpha001_logreg_C001_6m", "alpha": 0.01, "logreg_C": 0.01, "random_state": 42},
-    {"backtest_name": "ridge_alpha01_logreg_C001_6m", "alpha": 0.1, "logreg_C": 0.01, "random_state": 42},
-    {"backtest_name": "ridge_alpha1_logreg_C001_6m", "alpha": 1.0, "logreg_C": 0.01, "random_state": 42},
-    {"backtest_name": "ridge_alpha10_logreg_C001_6m", "alpha": 10.0, "logreg_C": 0.01, "random_state": 42},
-    {"backtest_name": "ridge_alpha100_logreg_C001_6m", "alpha": 100.0, "logreg_C": 0.01, "random_state": 42},
+    # Keep current best Ridge as benchmark
+    {
+        "backtest_name": "ridge_alpha001_logreg_C001_8m",
+        "alpha": 0.01,
+        "logreg_C": 0.01,
+        "random_state": 42,
+    },
 
-    {"backtest_name": "ridge_alpha01_logreg_C005_6m", "alpha": 0.1, "logreg_C": 0.05, "random_state": 42},
-    {"backtest_name": "ridge_alpha1_logreg_C005_6m", "alpha": 1.0, "logreg_C": 0.05, "random_state": 42},
-    {"backtest_name": "ridge_alpha10_logreg_C005_6m", "alpha": 10.0, "logreg_C": 0.05, "random_state": 42},
+    # More selective logistic gate
+    {
+        "backtest_name": "ridge_alpha001_logreg_C0005_8m",
+        "alpha": 0.01,
+        "logreg_C": 0.005,
+        "random_state": 42,
+    },
+    {
+        "backtest_name": "ridge_alpha001_logreg_C0002_8m",
+        "alpha": 0.01,
+        "logreg_C": 0.002,
+        "random_state": 42,
+    },
+    {
+        "backtest_name": "ridge_alpha001_logreg_C0001_8m",
+        "alpha": 0.01,
+        "logreg_C": 0.001,
+        "random_state": 42,
+    },
 
-    {"backtest_name": "ridge_alpha1_logreg_C01_6m", "alpha": 1.0, "logreg_C": 0.1, "random_state": 42},
-    {"backtest_name": "ridge_alpha10_logreg_C01_6m", "alpha": 10.0, "logreg_C": 0.1, "random_state": 42},
+    # Slightly lower Ridge alpha: maybe previous ridge was too smooth
+    {
+        "backtest_name": "ridge_alpha0001_logreg_C001_8m",
+        "alpha": 0.001,
+        "logreg_C": 0.01,
+        "random_state": 42,
+    },
+    {
+        "backtest_name": "ridge_alpha0001_logreg_C0005_8m",
+        "alpha": 0.001,
+        "logreg_C": 0.005,
+        "random_state": 42,
+    },
+    {
+        "backtest_name": "ridge_alpha0001_logreg_C0002_8m",
+        "alpha": 0.001,
+        "logreg_C": 0.002,
+        "random_state": 42,
+    },
+
+    # Slightly higher Ridge alpha: more smoothing, less noise
+    {
+        "backtest_name": "ridge_alpha005_logreg_C001_8m",
+        "alpha": 0.05,
+        "logreg_C": 0.01,
+        "random_state": 42,
+    },
+    {
+        "backtest_name": "ridge_alpha005_logreg_C0005_8m",
+        "alpha": 0.05,
+        "logreg_C": 0.005,
+        "random_state": 42,
+    },
+    {
+        "backtest_name": "ridge_alpha005_logreg_C0002_8m",
+        "alpha": 0.05,
+        "logreg_C": 0.002,
+        "random_state": 42,
+    },
+
+    # Around alpha 0.1 but with more selective gate
+    {
+        "backtest_name": "ridge_alpha01_logreg_C0005_8m",
+        "alpha": 0.1,
+        "logreg_C": 0.005,
+        "random_state": 42,
+    },
+    {
+        "backtest_name": "ridge_alpha01_logreg_C0002_8m",
+        "alpha": 0.1,
+        "logreg_C": 0.002,
+        "random_state": 42,
+    },
+    {
+        "backtest_name": "ridge_alpha01_logreg_C0001_8m",
+        "alpha": 0.1,
+        "logreg_C": 0.001,
+        "random_state": 42,
+    },
+
+    # Very high alpha but stricter gate: check if conservative linear trend works
+    {
+        "backtest_name": "ridge_alpha100_logreg_C0005_8m",
+        "alpha": 100,
+        "logreg_C": 0.005,
+        "random_state": 42,
+    },
+    {
+        "backtest_name": "ridge_alpha100_logreg_C0002_8m",
+        "alpha": 100,
+        "logreg_C": 0.002,
+        "random_state": 42,
+    },
 ]
 
 PRODUCTION_MODEL_PARAMS = PARAMETER_GRID[-1]
