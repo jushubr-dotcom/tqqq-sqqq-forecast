@@ -1,587 +1,283 @@
-import os
-import numpy as np
 import pandas as pd
+import numpy as np
 
 
-# ============================================================
+# =========================
 # CONFIG
-# ============================================================
+# =========================
 
-OUTPUT_DIR = "outputs"
+INPUT_FILE = "outputs/backtest_results.csv"
+OUTPUT_FILE = "outputs/ensemble_backtest_results.csv"
 
-BACKTEST_INPUT_PATH = os.path.join(OUTPUT_DIR, "backtest_results.csv")
-ENSEMBLE_BACKTEST_OUTPUT_PATH = os.path.join(
-    OUTPUT_DIR,
-    "ensemble_backtest_results.csv",
-)
+DATE_COL = "date"
+MODEL_COL = "model_name"
 
-HORIZONS = [3, 5, 7, 9]
+PRED_COL = "3d_return_pct_pred"
+ACTUAL_COL = "3d_return_pct_actual"
 
-MODEL_NAMES_TO_INCLUDE = [
-    "RandomForest",
-    "ExtraTrees",
-    "XGBoost",
-    "LightGBM",
-    "CatBoost",
-    "Ridge",
-    "ElasticNet",
+# Minimum predicted return for a model to count as ON.
+# If your predicted returns are decimals, e.g. 0.006 = 0.6%, use 0.
+# If they are percentages, e.g. 0.6 = 0.6%, still use 0.
+MODEL_ON_THRESHOLD = 0
+
+# Ensemble rule mode:
+# "strict" = best precision, fewer buys
+# "score" = slightly more flexible
+ENSEMBLE_MODE = "strict"
+
+
+# =========================
+# MODEL GROUPS
+# =========================
+
+EXTRATREES_BEST = [
+    "et_100trees_depth4_leaf20_log2_6m"
 ]
 
-MIN_MODELS_REQUIRED = int(os.getenv("MIN_MODELS_REQUIRED", "3"))
-MIN_POSITIVE_PREDICTIONS = int(os.getenv("MIN_POSITIVE_PREDICTIONS", "30"))
-BUY_RETURN_THRESHOLD = float(os.getenv("BUY_RETURN_THRESHOLD", "0.0"))
-WEIGHTED_BUY_SCORE_THRESHOLD = float(os.getenv("WEIGHTED_BUY_SCORE_THRESHOLD", "0.60"))
+ELASTICNET_BEST_BLOCK = [
+    "elasticnet_alpha01_l1_05_logreg_C001_6m",
+    "elasticnet_alpha01_l1_05_logreg_C005_6m",
+    "elasticnet_alpha01_l1_05_logreg_C01_6m",
+    "elasticnet_alpha01_l1_09_logreg_C001_6m",
+    "elasticnet_alpha1_l1_01_logreg_C001_6m",
+    "elasticnet_alpha1_l1_05_logreg_C001_6m",
+]
 
-MODEL_SELECTION_METRIC = os.getenv("MODEL_SELECTION_METRIC", "return_uplift")
+CATBOOST_CONFIRM = [
+    "cat_50trees_depth2_lr003_l2_5_6m",
+    "cat_100trees_depth3_lr003_l2_5_6m",
+]
 
-DEFAULT_MODEL_WEIGHTS = {
-    "ExtraTrees": 0.40,
-    "LightGBM": 0.25,
-    "XGBoost": 0.12,
-    "RandomForest": 0.10,
-    "CatBoost": 0.07,
-    "Ridge": 0.03,
-    "ElasticNet": 0.03,
-}
+RANDOMFOREST_CONFIRM = [
+    "rf_100trees_depth5_leaf20_sqrt_6m",
+    "rf_100trees_depth6_leaf20_sqrt_6m",
+    "rf_100trees_depth4_leaf20_log2_6m",
+    "rf_100trees_depth4_leaf20_sqrt_6m",
+]
 
-USE_BACKTEST_DERIVED_WEIGHTS = (
-    os.getenv("USE_BACKTEST_DERIVED_WEIGHTS", "true").lower() == "true"
+XGBOOST_CONFIRM = [
+    "xgb_25trees_depth2_lr003_child5_sub08_col08_6m"
+]
+
+LIGHTGBM_CONFIRM = [
+    "lgbm_100trees_depth2_lr003_leaves3_child40_sub08_col08_6m",
+    "lgbm_125trees_depth2_lr004_leaves3_child40_sub08_col08_6m",
+]
+
+RIDGE_CONFIRM = [
+    "ridge_alpha001_logreg_C001_6m"
+]
+
+WEAK_ELASTICNET = [
+    "elasticnet_alpha001_l1_01_logreg_C001_6m",
+    "elasticnet_alpha001_l1_05_logreg_C001_6m",
+]
+
+WEAK_RIDGE = [
+    "ridge_alpha1_logreg_C001_6m",
+    "ridge_alpha1_logreg_C005_6m",
+    "ridge_alpha1_logreg_C01_6m",
+    "ridge_alpha10_logreg_C001_6m",
+    "ridge_alpha10_logreg_C005_6m",
+    "ridge_alpha10_logreg_C01_6m",
+    "ridge_alpha100_logreg_C001_6m",
+]
+
+WEAK_XGB = [
+    "xgb_50trees_depth2_lr003_child5_sub08_col08_6m"
+]
+
+
+# =========================
+# HELPERS
+# =========================
+
+def any_model_on(row, model_list):
+    existing = [m for m in model_list if m in row.index]
+    if not existing:
+        return False
+    return row[existing].fillna(False).astype(bool).any()
+
+
+def count_models_on(row, model_list):
+    existing = [m for m in model_list if m in row.index]
+    if not existing:
+        return 0
+    return int(row[existing].fillna(False).astype(bool).sum())
+
+
+def calculate_ensemble_score(row):
+    extratrees_on = any_model_on(row, EXTRATREES_BEST)
+    elasticnet_on = any_model_on(row, ELASTICNET_BEST_BLOCK)
+    cat_on = any_model_on(row, CATBOOST_CONFIRM)
+    rf_on = any_model_on(row, RANDOMFOREST_CONFIRM)
+    xgb_on = any_model_on(row, XGBOOST_CONFIRM)
+    lgbm_on = any_model_on(row, LIGHTGBM_CONFIRM)
+    ridge_on = any_model_on(row, RIDGE_CONFIRM)
+
+    weak_elasticnet_on = any_model_on(row, WEAK_ELASTICNET)
+    weak_ridge_on = any_model_on(row, WEAK_RIDGE)
+    weak_xgb_on = any_model_on(row, WEAK_XGB)
+
+    score = 0
+
+    score += 3.0 if extratrees_on else 0
+    score += 3.0 if elasticnet_on else 0
+    score += 2.0 if cat_on else 0
+    score += 2.0 if rf_on else 0
+    score += 1.5 if xgb_on else 0
+    score += 1.0 if lgbm_on else 0
+    score += 1.0 if ridge_on else 0
+
+    score -= 2.0 if weak_elasticnet_on else 0
+    score -= 2.0 if weak_ridge_on else 0
+    score -= 1.5 if weak_xgb_on else 0
+
+    return score
+
+
+def strict_ensemble_buy(row):
+    extratrees_on = any_model_on(row, EXTRATREES_BEST)
+    elasticnet_on = any_model_on(row, ELASTICNET_BEST_BLOCK)
+
+    cat_on = any_model_on(row, CATBOOST_CONFIRM)
+    rf_on = any_model_on(row, RANDOMFOREST_CONFIRM)
+    xgb_on = any_model_on(row, XGBOOST_CONFIRM)
+
+    weak_count = 0
+    weak_count += int(any_model_on(row, WEAK_ELASTICNET))
+    weak_count += int(any_model_on(row, WEAK_RIDGE))
+    weak_count += int(any_model_on(row, WEAK_XGB))
+
+    confirmation_on = cat_on or rf_on or xgb_on
+
+    return (
+        extratrees_on
+        and elasticnet_on
+        and confirmation_on
+        and weak_count < 2
+    )
+
+
+# =========================
+# LOAD DATA
+# =========================
+
+df = pd.read_csv(INPUT_FILE)
+
+required_cols = [DATE_COL, MODEL_COL, PRED_COL, ACTUAL_COL]
+missing_cols = [c for c in required_cols if c not in df.columns]
+
+if missing_cols:
+    raise ValueError(f"Missing required columns: {missing_cols}")
+
+df[DATE_COL] = pd.to_datetime(df[DATE_COL])
+
+# Model ON means predicted 3d return is above threshold
+df["model_on"] = df[PRED_COL] > MODEL_ON_THRESHOLD
+
+# Actual profitable result
+df["actual_profitable"] = df[ACTUAL_COL] > 0
+
+
+# =========================
+# PIVOT MODEL SIGNALS
+# =========================
+
+signal_wide = (
+    df.pivot_table(
+        index=DATE_COL,
+        columns=MODEL_COL,
+        values="model_on",
+        aggfunc="max"
+    )
+    .fillna(False)
 )
 
+actual_by_date = (
+    df.groupby(DATE_COL, as_index=True)
+      .agg(
+          actual_3d_return=(ACTUAL_COL, "mean"),
+          actual_profitable=("actual_profitable", "max")
+      )
+)
 
-# ============================================================
-# HELPERS
-# ============================================================
+ensemble = signal_wide.copy()
 
-def safe_divide(numerator, denominator):
-    if denominator is None or pd.isna(denominator) or denominator == 0:
-        return np.nan
-    return numerator / denominator
+ensemble["ensemble_score"] = ensemble.apply(calculate_ensemble_score, axis=1)
+ensemble["strict_ensemble_buy"] = ensemble.apply(strict_ensemble_buy, axis=1)
 
+if ENSEMBLE_MODE == "strict":
+    ensemble["ensemble_buy"] = ensemble["strict_ensemble_buy"]
+elif ENSEMBLE_MODE == "score":
+    ensemble["ensemble_buy"] = ensemble["ensemble_score"] >= 8
+else:
+    raise ValueError("ENSEMBLE_MODE must be either 'strict' or 'score'.")
 
-def require_columns(df, cols, context):
-    missing_cols = [c for c in cols if c not in df.columns]
-    if missing_cols:
-        raise ValueError(f"Missing required columns for {context}: {missing_cols}")
+ensemble = ensemble.join(actual_by_date, how="left")
 
 
-def get_best_backtest_per_model(df):
-    """
-    Chooses one best backtest_name per model_name.
+# =========================
+# PERFORMANCE SUMMARY
+# =========================
 
-    Priority:
-      1. Highest model-on return uplift over model-off baseline
-      2. Highest model-on profitable rate uplift
-      3. Higher positive prediction count
-    """
+buy_days = ensemble[ensemble["ensemble_buy"] == True]
+no_buy_days = ensemble[ensemble["ensemble_buy"] == False]
 
-    required_cols = [
-        "model_name",
-        "backtest_name",
-        "sum_count_pred_positive",
-        "sum_count_pred_positive_w_actual_positive",
-        "average_return_pct_model_on_numerator",
-        "average_return_pct_model_on_denominator",
-        "average_return_pct_model_off_numerator",
-        "average_return_pct_model_off_denominator",
-        "average_profitable_model_on_numerator",
-        "average_profitable_model_on_denominator",
-        "average_profitable_model_off_numerator",
-        "average_profitable_model_off_denominator",
-    ]
-    require_columns(df, required_cols, "best backtest selection")
+summary = {
+    "ensemble_mode": ENSEMBLE_MODE,
+    "total_days": len(ensemble),
+    "buy_days": len(buy_days),
+    "no_buy_days": len(no_buy_days),
+    "buy_rate": len(buy_days) / len(ensemble) if len(ensemble) else np.nan,
 
-    summary = (
-        df.groupby(["model_name", "backtest_name"], dropna=False)
-        .agg(
-            total_pred_positive=("sum_count_pred_positive", "sum"),
-            total_pred_positive_actual_positive=(
-                "sum_count_pred_positive_w_actual_positive",
-                "sum",
-            ),
-            model_on_return_num=("average_return_pct_model_on_numerator", "sum"),
-            model_on_return_den=("average_return_pct_model_on_denominator", "sum"),
-            model_off_return_num=("average_return_pct_model_off_numerator", "sum"),
-            model_off_return_den=("average_return_pct_model_off_denominator", "sum"),
-            model_on_profitable_num=("average_profitable_model_on_numerator", "sum"),
-            model_on_profitable_den=("average_profitable_model_on_denominator", "sum"),
-            model_off_profitable_num=("average_profitable_model_off_numerator", "sum"),
-            model_off_profitable_den=("average_profitable_model_off_denominator", "sum"),
-            row_count=("symbol", "size"),
-        )
-        .reset_index()
-    )
+    "buy_profitable_days": int(buy_days["actual_profitable"].sum()) if len(buy_days) else 0,
+    "buy_profit_pct": buy_days["actual_profitable"].mean() if len(buy_days) else np.nan,
+    "no_buy_profit_pct": no_buy_days["actual_profitable"].mean() if len(no_buy_days) else np.nan,
 
-    summary["true_overall_buy_profit_pct"] = summary.apply(
-        lambda r: safe_divide(
-            r["total_pred_positive_actual_positive"],
-            r["total_pred_positive"],
-        ),
-        axis=1,
-    )
+    "avg_return_when_buy": buy_days["actual_3d_return"].mean() if len(buy_days) else np.nan,
+    "median_return_when_buy": buy_days["actual_3d_return"].median() if len(buy_days) else np.nan,
+    "worst_return_when_buy": buy_days["actual_3d_return"].min() if len(buy_days) else np.nan,
+    "best_return_when_buy": buy_days["actual_3d_return"].max() if len(buy_days) else np.nan,
 
-    summary["return_pct_model_on"] = summary.apply(
-        lambda r: safe_divide(r["model_on_return_num"], r["model_on_return_den"]),
-        axis=1,
-    )
-    summary["return_pct_model_off"] = summary.apply(
-        lambda r: safe_divide(r["model_off_return_num"], r["model_off_return_den"]),
-        axis=1,
-    )
-    summary["return_pct_model_uplift"] = (
-        summary["return_pct_model_on"] - summary["return_pct_model_off"]
-    )
+    "avg_return_when_no_buy": no_buy_days["actual_3d_return"].mean() if len(no_buy_days) else np.nan,
+    "missed_profitable_days": int(no_buy_days["actual_profitable"].sum()) if len(no_buy_days) else 0,
+}
 
-    summary["profitable_model_on"] = summary.apply(
-        lambda r: safe_divide(r["model_on_profitable_num"], r["model_on_profitable_den"]),
-        axis=1,
-    )
-    summary["profitable_model_off"] = summary.apply(
-        lambda r: safe_divide(r["model_off_profitable_num"], r["model_off_profitable_den"]),
-        axis=1,
-    )
-    summary["profitable_model_uplift"] = (
-        summary["profitable_model_on"] - summary["profitable_model_off"]
-    )
+summary_df = pd.DataFrame([summary])
 
-    filtered = summary[summary["total_pred_positive"] >= MIN_POSITIVE_PREDICTIONS].copy()
 
-    if filtered.empty:
-        print(
-            f"No model/backtest combinations passed MIN_POSITIVE_PREDICTIONS="
-            f"{MIN_POSITIVE_PREDICTIONS}. Falling back to best available combinations."
-        )
-        filtered = summary.copy()
+# =========================
+# EXTRA DIAGNOSTICS
+# =========================
 
-    if MODEL_SELECTION_METRIC == "buy_profit":
-        sort_cols = [
-            "model_name",
-            "true_overall_buy_profit_pct",
-            "return_pct_model_uplift",
-            "total_pred_positive",
-        ]
-    else:
-        sort_cols = [
-            "model_name",
-            "return_pct_model_uplift",
-            "profitable_model_uplift",
-            "total_pred_positive",
-        ]
+ensemble["position_return"] = np.where(
+    ensemble["ensemble_buy"],
+    ensemble["actual_3d_return"],
+    0
+)
 
-    filtered = filtered.sort_values(
-        sort_cols,
-        ascending=[True, False, False, False],
-    )
+ensemble["cumulative_strategy_return"] = ensemble["position_return"].cumsum()
+ensemble["cumulative_buy_and_hold_3d_return"] = ensemble["actual_3d_return"].cumsum()
 
-    return filtered.groupby("model_name").head(1).reset_index(drop=True)
+ensemble["equity_curve"] = (1 + ensemble["position_return"]).cumprod()
 
+ensemble["running_peak"] = ensemble["equity_curve"].cummax()
+ensemble["drawdown"] = ensemble["equity_curve"] / ensemble["running_peak"] - 1
 
-def build_model_weights(best_backtests):
-    """
-    Builds model weights after best variant selection.
+max_drawdown = ensemble["drawdown"].min()
+summary_df["max_drawdown"] = max_drawdown
 
-    If USE_BACKTEST_DERIVED_WEIGHTS=true, weights are proportional to positive return uplift.
-    Otherwise, DEFAULT_MODEL_WEIGHTS are used and normalised over included models.
-    """
 
-    if USE_BACKTEST_DERIVED_WEIGHTS:
-        temp = best_backtests.copy()
-        temp["positive_uplift"] = temp["return_pct_model_uplift"].clip(lower=0)
-        temp["raw_weight"] = temp["positive_uplift"] + 0.001
-        total_raw_weight = temp["raw_weight"].sum()
+# =========================
+# SAVE OUTPUTS
+# =========================
 
-        if total_raw_weight > 0:
-            return {
-                row["model_name"]: row["raw_weight"] / total_raw_weight
-                for _, row in temp.iterrows()
-            }
+ensemble.reset_index().to_csv(OUTPUT_FILE, index=False)
+summary_df.to_csv("outputs/ensemble_summary.csv", index=False)
 
-    included_default_weights = {
-        model_name: DEFAULT_MODEL_WEIGHTS.get(model_name, 0.01)
-        for model_name in best_backtests["model_name"].unique()
-    }
+print("\nENSEMBLE SUMMARY")
+print(summary_df.T)
 
-    total_weight = sum(included_default_weights.values())
-
-    if total_weight == 0:
-        equal_weight = 1 / len(included_default_weights)
-        return {model_name: equal_weight for model_name in included_default_weights}
-
-    return {
-        model_name: weight / total_weight
-        for model_name, weight in included_default_weights.items()
-    }
-
-
-def filter_to_best_backtests(df, best_backtests):
-    keep_pairs = set(zip(best_backtests["model_name"], best_backtests["backtest_name"]))
-
-    return df[
-        df.apply(lambda r: (r["model_name"], r["backtest_name"]) in keep_pairs, axis=1)
-    ].copy()
-
-
-def build_long_horizon_backtest(df, model_weights):
-    """
-    Converts wide backtest rows into long format.
-
-    One row per:
-        model_name
-        backtest_name
-        symbol
-        test_start_date
-        horizon
-    """
-
-    long_rows = []
-
-    for horizon in HORIZONS:
-        pred_col = f"{horizon}d_return_pct_pred"
-        actual_col = f"{horizon}d_return_pct_actual"
-        close_actual_col = f"{horizon}d_close_actual"
-        conf_col = f"{horizon}d_confidence_no_loss"
-        loss_col = f"{horizon}d_loss_probability"
-
-        required_cols = [
-            "run_timestamp",
-            "model_name",
-            "backtest_name",
-            "symbol",
-            "test_start_date",
-            "test_end_date",
-            "previous_trading_date",
-            "previous_close_before_test_start",
-            pred_col,
-            actual_col,
-            close_actual_col,
-            conf_col,
-            loss_col,
-        ]
-
-        missing_cols = [c for c in required_cols if c not in df.columns]
-
-        if missing_cols:
-            print(f"Skipping {horizon}d because missing columns: {missing_cols}")
-            continue
-
-        temp = df[required_cols].copy()
-
-        temp["horizon"] = horizon
-
-        temp = temp.rename(
-            columns={
-                pred_col: "return_pct_pred",
-                actual_col: "return_pct_actual",
-                close_actual_col: "close_actual",
-                conf_col: "confidence_no_loss",
-                loss_col: "loss_probability",
-            }
-        )
-
-        temp["model_buy_vote"] = (temp["return_pct_pred"] > BUY_RETURN_THRESHOLD).astype(int)
-        temp["model_weight"] = temp["model_name"].map(model_weights).fillna(0.0)
-        temp["weighted_buy_vote"] = temp["model_buy_vote"] * temp["model_weight"]
-        temp["weighted_return_pct_pred"] = temp["return_pct_pred"] * temp["model_weight"]
-
-        long_rows.append(temp)
-
-    if not long_rows:
-        return pd.DataFrame()
-
-    long_df = pd.concat(long_rows, ignore_index=True)
-
-    return long_df.dropna(
-        subset=[
-            "return_pct_pred",
-            "return_pct_actual",
-            "loss_probability",
-            "model_weight",
-        ]
-    )
-
-
-def create_weighted_vote_ensemble(long_df):
-    """
-    Creates weighted-vote ensemble by symbol/date/horizon.
-
-    BUY when:
-        weighted_buy_score >= WEIGHTED_BUY_SCORE_THRESHOLD
-
-    This is a model agreement filter, not a pure prediction averaging ensemble.
-    """
-
-    group_cols = ["symbol", "test_start_date", "horizon"]
-
-    ensemble = (
-        long_df.groupby(group_cols)
-        .agg(
-            model_count=("model_name", "nunique"),
-            models_used=("model_name", lambda x: ",".join(sorted(set(x)))),
-            backtests_used=("backtest_name", lambda x: ",".join(sorted(set(x)))),
-            previous_trading_date=("previous_trading_date", "first"),
-            previous_close_before_test_start=("previous_close_before_test_start", "first"),
-            test_end_date=("test_end_date", "max"),
-            ensemble_return_pct_pred=("return_pct_pred", "mean"),
-            weighted_pred_num=("weighted_return_pct_pred", "sum"),
-            weighted_pred_den=("model_weight", "sum"),
-            ensemble_return_pct_actual=("return_pct_actual", "first"),
-            ensemble_close_actual=("close_actual", "first"),
-            ensemble_loss_probability=("loss_probability", "mean"),
-            positive_model_votes=("model_buy_vote", "sum"),
-            total_model_weight=("model_weight", "sum"),
-            weighted_buy_vote=("weighted_buy_vote", "sum"),
-        )
-        .reset_index()
-    )
-
-    ensemble = ensemble[ensemble["model_count"] >= MIN_MODELS_REQUIRED].copy()
-
-    ensemble["ensemble_weighted_return_pct_pred"] = ensemble.apply(
-        lambda r: safe_divide(r["weighted_pred_num"], r["weighted_pred_den"]),
-        axis=1,
-    )
-
-    ensemble["ensemble_confidence_no_loss"] = 1 - ensemble["ensemble_loss_probability"]
-
-    ensemble["weighted_buy_score"] = ensemble.apply(
-        lambda r: safe_divide(r["weighted_buy_vote"], r["total_model_weight"]),
-        axis=1,
-    )
-
-    ensemble["unweighted_buy_score"] = ensemble.apply(
-        lambda r: safe_divide(r["positive_model_votes"], r["model_count"]),
-        axis=1,
-    )
-
-    ensemble["ensemble_count_pred_positive"] = (
-        ensemble["weighted_buy_score"] >= WEIGHTED_BUY_SCORE_THRESHOLD
-    ).astype(int)
-
-    ensemble["ensemble_signal"] = np.where(
-        ensemble["ensemble_count_pred_positive"] == 1,
-        "BUY",
-        "NO_BUY",
-    )
-
-    ensemble["ensemble_count_pred_positive_w_actual_positive"] = (
-        (ensemble["ensemble_count_pred_positive"] == 1)
-        & (ensemble["ensemble_return_pct_actual"] > 0)
-    ).astype(int)
-
-    ensemble["ensemble_buy_profit_pct"] = ensemble.apply(
-        lambda r: safe_divide(
-            r["ensemble_count_pred_positive_w_actual_positive"],
-            r["ensemble_count_pred_positive"],
-        ),
-        axis=1,
-    )
-
-    # Same success metrics as individual model level, recalculated from ensemble BUY signal.
-
-    ensemble["ensemble_return_pct_model_on_numerator"] = np.where(
-        ensemble["ensemble_count_pred_positive"] == 1,
-        ensemble["ensemble_return_pct_actual"],
-        0.0,
-    )
-    ensemble["ensemble_return_pct_model_on_denominator"] = (
-        ensemble["ensemble_count_pred_positive"]
-    )
-    ensemble["ensemble_return_pct_model_on"] = ensemble.apply(
-        lambda r: safe_divide(
-            r["ensemble_return_pct_model_on_numerator"],
-            r["ensemble_return_pct_model_on_denominator"],
-        ),
-        axis=1,
-    )
-
-    ensemble["ensemble_return_pct_model_off_numerator"] = (
-        ensemble["ensemble_return_pct_actual"]
-    )
-    ensemble["ensemble_return_pct_model_off_denominator"] = 1
-    ensemble["ensemble_return_pct_model_off"] = ensemble[
-        "ensemble_return_pct_actual"
-    ]
-
-    ensemble["ensemble_return_pct_model_uplift"] = (
-        ensemble["ensemble_return_pct_model_on"]
-        - ensemble["ensemble_return_pct_model_off"]
-    )
-
-    ensemble["ensemble_profitable_model_on_numerator"] = (
-        ensemble["ensemble_count_pred_positive_w_actual_positive"]
-    )
-    ensemble["ensemble_profitable_model_on_denominator"] = (
-        ensemble["ensemble_count_pred_positive"]
-    )
-    ensemble["ensemble_profitable_model_on"] = ensemble.apply(
-        lambda r: safe_divide(
-            r["ensemble_profitable_model_on_numerator"],
-            r["ensemble_profitable_model_on_denominator"],
-        ),
-        axis=1,
-    )
-
-    ensemble["ensemble_profitable_model_off_numerator"] = (
-        ensemble["ensemble_return_pct_actual"] > 0
-    ).astype(int)
-    ensemble["ensemble_profitable_model_off_denominator"] = 1
-    ensemble["ensemble_profitable_model_off"] = ensemble[
-        "ensemble_profitable_model_off_numerator"
-    ]
-
-    ensemble["ensemble_profitable_model_uplift"] = (
-        ensemble["ensemble_profitable_model_on"]
-        - ensemble["ensemble_profitable_model_off"]
-    )
-
-    ensemble["ensemble_model_on_trade_count"] = ensemble["ensemble_count_pred_positive"]
-    ensemble["ensemble_model_on_trade_rate"] = ensemble["ensemble_count_pred_positive"]
-    ensemble["ensemble_model_on_total_return"] = np.where(
-        ensemble["ensemble_count_pred_positive"] == 1,
-        ensemble["ensemble_return_pct_actual"],
-        0.0,
-    )
-    ensemble["ensemble_model_on_worst_return"] = np.where(
-        ensemble["ensemble_count_pred_positive"] == 1,
-        ensemble["ensemble_return_pct_actual"],
-        np.nan,
-    )
-
-    ensemble["buy_return_threshold"] = BUY_RETURN_THRESHOLD
-    ensemble["weighted_buy_score_threshold"] = WEIGHTED_BUY_SCORE_THRESHOLD
-
-    return ensemble
-
-
-def summarise_ensemble(ensemble):
-    """
-    Summarises ensemble performance by horizon and symbol.
-    """
-
-    summary = (
-        ensemble.groupby(["symbol", "horizon"])
-        .agg(
-            rows=("symbol", "size"),
-            avg_model_count=("model_count", "mean"),
-            avg_pred_return=("ensemble_return_pct_pred", "mean"),
-            avg_weighted_pred_return=("ensemble_weighted_return_pct_pred", "mean"),
-            avg_actual_return=("ensemble_return_pct_actual", "mean"),
-            avg_weighted_buy_score=("weighted_buy_score", "mean"),
-            avg_unweighted_buy_score=("unweighted_buy_score", "mean"),
-            sum_count_pred_positive=("ensemble_count_pred_positive", "sum"),
-            sum_count_pred_positive_w_actual_positive=(
-                "ensemble_count_pred_positive_w_actual_positive",
-                "sum",
-            ),
-            avg_loss_probability=("ensemble_loss_probability", "mean"),
-            return_model_on_num=("ensemble_return_pct_model_on_numerator", "sum"),
-            return_model_on_den=("ensemble_return_pct_model_on_denominator", "sum"),
-            return_model_off_num=("ensemble_return_pct_model_off_numerator", "sum"),
-            return_model_off_den=("ensemble_return_pct_model_off_denominator", "sum"),
-            profitable_model_on_num=("ensemble_profitable_model_on_numerator", "sum"),
-            profitable_model_on_den=("ensemble_profitable_model_on_denominator", "sum"),
-            profitable_model_off_num=("ensemble_profitable_model_off_numerator", "sum"),
-            profitable_model_off_den=("ensemble_profitable_model_off_denominator", "sum"),
-            model_on_total_return=("ensemble_model_on_total_return", "sum"),
-            model_on_worst_return=("ensemble_model_on_worst_return", "min"),
-        )
-        .reset_index()
-    )
-
-    summary["overall_buy_profit_pct"] = summary.apply(
-        lambda r: safe_divide(
-            r["sum_count_pred_positive_w_actual_positive"],
-            r["sum_count_pred_positive"],
-        ),
-        axis=1,
-    )
-
-    summary["return_pct_model_on"] = summary.apply(
-        lambda r: safe_divide(r["return_model_on_num"], r["return_model_on_den"]),
-        axis=1,
-    )
-    summary["return_pct_model_off"] = summary.apply(
-        lambda r: safe_divide(r["return_model_off_num"], r["return_model_off_den"]),
-        axis=1,
-    )
-    summary["return_pct_model_uplift"] = (
-        summary["return_pct_model_on"] - summary["return_pct_model_off"]
-    )
-
-    summary["profitable_model_on"] = summary.apply(
-        lambda r: safe_divide(
-            r["profitable_model_on_num"],
-            r["profitable_model_on_den"],
-        ),
-        axis=1,
-    )
-    summary["profitable_model_off"] = summary.apply(
-        lambda r: safe_divide(
-            r["profitable_model_off_num"],
-            r["profitable_model_off_den"],
-        ),
-        axis=1,
-    )
-    summary["profitable_model_uplift"] = (
-        summary["profitable_model_on"] - summary["profitable_model_off"]
-    )
-
-    summary["model_on_trade_rate"] = summary.apply(
-        lambda r: safe_divide(r["sum_count_pred_positive"], r["rows"]),
-        axis=1,
-    )
-
-    return summary.sort_values(["symbol", "horizon"]).reset_index(drop=True)
-
-
-# ============================================================
-# MAIN
-# ============================================================
-
-def main():
-    if not os.path.exists(BACKTEST_INPUT_PATH):
-        raise FileNotFoundError(f"Missing input file: {BACKTEST_INPUT_PATH}")
-
-    df = pd.read_csv(BACKTEST_INPUT_PATH, low_memory=False)
-
-    df = df[df["model_name"].isin(MODEL_NAMES_TO_INCLUDE)].copy()
-
-    if df.empty:
-        raise ValueError("No rows found for selected model names.")
-
-    print("Selecting best backtest_name per model...")
-    best_backtests = get_best_backtest_per_model(df)
-
-    print("\nBest backtest per model:")
-    print(best_backtests)
-
-    model_weights = build_model_weights(best_backtests)
-
-    print("\nModel weights:")
-    for model_name, weight in sorted(model_weights.items()):
-        print(f"{model_name}: {weight:.4f}")
-
-    df_best = filter_to_best_backtests(df, best_backtests)
-
-    print(f"\nRows after filtering to best backtests: {len(df_best):,}")
-
-    long_df = build_long_horizon_backtest(df_best, model_weights)
-
-    print(f"Long-format rows: {len(long_df):,}")
-
-    ensemble = create_weighted_vote_ensemble(long_df)
-
-    print(f"Ensemble rows: {len(ensemble):,}")
-
-    ensemble.to_csv(ENSEMBLE_BACKTEST_OUTPUT_PATH, index=False)
-
-    print(f"\nSaved ensemble backtest to: {ENSEMBLE_BACKTEST_OUTPUT_PATH}")
-
-    summary = summarise_ensemble(ensemble)
-
-    print("\nEnsemble summary:")
-    print(summary)
-
-
-if __name__ == "__main__":
-    main()
+print(f"\nSaved detailed ensemble backtest to: {OUTPUT_FILE}")
+print("Saved summary to: outputs/ensemble_summary.csv")
