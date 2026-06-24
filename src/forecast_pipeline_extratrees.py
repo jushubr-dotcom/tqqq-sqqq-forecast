@@ -45,6 +45,20 @@ SMOKE_TEST_PARAMETER_COUNT = int(os.getenv("SMOKE_TEST_PARAMETER_COUNT", "2"))
 
 MODEL_NAME = os.getenv("MODEL_NAME", "ExtraTrees")
 
+# ============================================================
+# MARKET REGIME FILTER CONFIG
+# ============================================================
+# Easy off switch:
+#   USE_MARKET_REGIME_FILTER=false
+#
+# Loose defaults first, so the filter does not kill BUY count too aggressively.
+# These are evaluated using the previous trading row only, so they are leak-safe.
+USE_MARKET_REGIME_FILTER = os.getenv("USE_MARKET_REGIME_FILTER", "true").lower() == "true"
+REGIME_MIN_MA_RATIO_28 = float(os.getenv("REGIME_MIN_MA_RATIO_28", "0.98"))
+REGIME_MIN_RETURN_20D = float(os.getenv("REGIME_MIN_RETURN_20D", "-0.08"))
+REGIME_MAX_HIGH_LOW_RANGE = float(os.getenv("REGIME_MAX_HIGH_LOW_RANGE", "0.12"))
+
+
 
 # ============================================================
 # EXTRA TREES PARAMETER GRID
@@ -209,6 +223,52 @@ def safe_divide(numerator, denominator):
     if denominator is None or pd.isna(denominator) or denominator == 0:
         return np.nan
     return numerator / denominator
+
+
+def get_market_regime_flags(row):
+    """
+    Returns leak-safe market-regime diagnostics using only the prediction input row.
+
+    In backtest, row must be previous_row, not the current test-day row.
+    In production, row is latest_row.
+    """
+
+    ma_ratio_28 = float(row.iloc[0].get("ma_ratio_28", np.nan))
+    return_20d_past = float(row.iloc[0].get("return_20d_past", np.nan))
+    high_low_range = float(row.iloc[0].get("high_low_range", np.nan))
+
+    trend_ok = not pd.isna(ma_ratio_28) and ma_ratio_28 >= REGIME_MIN_MA_RATIO_28
+    momentum_ok = not pd.isna(return_20d_past) and return_20d_past >= REGIME_MIN_RETURN_20D
+    volatility_ok = not pd.isna(high_low_range) and high_low_range <= REGIME_MAX_HIGH_LOW_RANGE
+
+    regime_ok = trend_ok and momentum_ok and volatility_ok
+
+    return {
+        "regime_filter_enabled": bool(USE_MARKET_REGIME_FILTER),
+        "regime_ok": bool(regime_ok),
+        "regime_trend_ok": bool(trend_ok),
+        "regime_momentum_ok": bool(momentum_ok),
+        "regime_volatility_ok": bool(volatility_ok),
+        "regime_ma_ratio_28": ma_ratio_28,
+        "regime_return_20d_past": return_20d_past,
+        "regime_high_low_range": high_low_range,
+        "regime_min_ma_ratio_28_threshold": REGIME_MIN_MA_RATIO_28,
+        "regime_min_return_20d_threshold": REGIME_MIN_RETURN_20D,
+        "regime_max_high_low_range_threshold": REGIME_MAX_HIGH_LOW_RANGE,
+    }
+
+
+def apply_market_regime_filter(raw_pred_positive, regime_flags):
+    """
+    Applies the optional market-regime gate to a raw positive prediction.
+
+    If USE_MARKET_REGIME_FILTER=false, this returns raw_pred_positive unchanged.
+    """
+
+    if USE_MARKET_REGIME_FILTER:
+        return bool(raw_pred_positive and regime_flags["regime_ok"])
+
+    return bool(raw_pred_positive)
 
 
 def get_top_features_from_importances(feature_cols, importance_arrays, top_n=5):
@@ -601,6 +661,17 @@ def build_ordered_output_row(output_row):
         "test_end_date",
         "previous_trading_date",
         "previous_close_before_test_start",
+        "regime_filter_enabled",
+        "regime_ok",
+        "regime_trend_ok",
+        "regime_momentum_ok",
+        "regime_volatility_ok",
+        "regime_ma_ratio_28",
+        "regime_return_20d_past",
+        "regime_high_low_range",
+        "regime_min_ma_ratio_28_threshold",
+        "regime_min_return_20d_threshold",
+        "regime_max_high_low_range_threshold",
     ]
 
     for horizon in HORIZONS:
@@ -610,6 +681,8 @@ def build_ordered_output_row(output_row):
             f"{horizon}d_close_actual",
             f"{horizon}d_confidence_no_loss",
             f"{horizon}d_loss_probability",
+            f"{horizon}d_raw_pred_positive",
+            f"{horizon}d_regime_filtered_buy",
             f"{horizon}d_count_pred_positive",
             f"{horizon}d_count_pred_positive_w_actual_positive",
             f"{horizon}d_buy_profit_pct",
@@ -701,6 +774,7 @@ def run_backtest(features, model_params, output_path):
             previous_row = symbol_df.iloc[[test_row_index - 1]].copy()
             previous_trading_date = pd.to_datetime(previous_row.iloc[0]["date"])
             previous_close_before_test_start = float(previous_row.iloc[0]["close"])
+            regime_flags = get_market_regime_flags(previous_row)
 
             if previous_row[feature_cols].isna().any(axis=None):
                 print("    Skipped: previous row has missing feature values.", flush=True)
@@ -737,6 +811,17 @@ def run_backtest(features, model_params, output_path):
                 "test_end_date": None,
                 "previous_trading_date": previous_trading_date.date(),
                 "previous_close_before_test_start": previous_close_before_test_start,
+                "regime_filter_enabled": regime_flags["regime_filter_enabled"],
+                "regime_ok": regime_flags["regime_ok"],
+                "regime_trend_ok": regime_flags["regime_trend_ok"],
+                "regime_momentum_ok": regime_flags["regime_momentum_ok"],
+                "regime_volatility_ok": regime_flags["regime_volatility_ok"],
+                "regime_ma_ratio_28": regime_flags["regime_ma_ratio_28"],
+                "regime_return_20d_past": regime_flags["regime_return_20d_past"],
+                "regime_high_low_range": regime_flags["regime_high_low_range"],
+                "regime_min_ma_ratio_28_threshold": regime_flags["regime_min_ma_ratio_28_threshold"],
+                "regime_min_return_20d_threshold": regime_flags["regime_min_return_20d_threshold"],
+                "regime_max_high_low_range_threshold": regime_flags["regime_max_high_low_range_threshold"],
             }
 
             return_predictions = []
@@ -805,9 +890,15 @@ def run_backtest(features, model_params, output_path):
                     actual_close / previous_close_before_test_start
                 ) - 1
 
-                count_pred_positive = int(return_pct_pred > 0)
+                raw_pred_positive = return_pct_pred > 0
+                model_buy_signal = apply_market_regime_filter(
+                    raw_pred_positive=raw_pred_positive,
+                    regime_flags=regime_flags,
+                )
+
+                count_pred_positive = int(model_buy_signal)
                 count_pred_positive_w_actual_positive = int(
-                    return_pct_pred > 0 and return_pct_actual > 0
+                    model_buy_signal and return_pct_actual > 0
                 )
 
                 output_row = add_horizon_success_metrics(
@@ -828,6 +919,8 @@ def run_backtest(features, model_params, output_path):
                 output_row[f"{horizon}d_close_actual"] = actual_close
                 output_row[f"{horizon}d_confidence_no_loss"] = confidence_no_loss
                 output_row[f"{horizon}d_loss_probability"] = loss_probability
+                output_row[f"{horizon}d_raw_pred_positive"] = int(raw_pred_positive)
+                output_row[f"{horizon}d_regime_filtered_buy"] = int(model_buy_signal)
                 output_row[f"{horizon}d_count_pred_positive"] = count_pred_positive
                 output_row[
                     f"{horizon}d_count_pred_positive_w_actual_positive"
@@ -1065,6 +1158,7 @@ def run_production_forecast(features):
 
         latest_date = pd.to_datetime(latest_row.iloc[0]["date"])
         latest_close = float(latest_row.iloc[0]["close"])
+        regime_flags = get_market_regime_flags(latest_row)
 
         training_start_date = latest_date - timedelta(days=365)
 
@@ -1080,6 +1174,17 @@ def run_production_forecast(features):
             "max_depth": model_params["max_depth"],
             "min_samples_leaf": model_params["min_samples_leaf"],
             "random_state": model_params["random_state"],
+            "regime_filter_enabled": regime_flags["regime_filter_enabled"],
+            "regime_ok": regime_flags["regime_ok"],
+            "regime_trend_ok": regime_flags["regime_trend_ok"],
+            "regime_momentum_ok": regime_flags["regime_momentum_ok"],
+            "regime_volatility_ok": regime_flags["regime_volatility_ok"],
+            "regime_ma_ratio_28": regime_flags["regime_ma_ratio_28"],
+            "regime_return_20d_past": regime_flags["regime_return_20d_past"],
+            "regime_high_low_range": regime_flags["regime_high_low_range"],
+            "regime_min_ma_ratio_28_threshold": regime_flags["regime_min_ma_ratio_28_threshold"],
+            "regime_min_return_20d_threshold": regime_flags["regime_min_return_20d_threshold"],
+            "regime_max_high_low_range_threshold": regime_flags["regime_max_high_low_range_threshold"],
         }
 
         for horizon in HORIZONS:
@@ -1118,6 +1223,15 @@ def run_production_forecast(features):
             output_row[f"{horizon}d_confidence_no_loss"] = confidence_no_loss
             output_row[f"{horizon}d_loss_probability"] = loss_probability
 
+            raw_pred_positive = return_pct_pred > 0
+            model_buy_signal = apply_market_regime_filter(
+                raw_pred_positive=raw_pred_positive,
+                regime_flags=regime_flags,
+            )
+
+            output_row[f"{horizon}d_raw_pred_positive"] = int(raw_pred_positive)
+            output_row[f"{horizon}d_regime_filtered_buy"] = int(model_buy_signal)
+
         results.append(output_row)
 
     production_forecast = pd.DataFrame(results)
@@ -1137,6 +1251,12 @@ def run_production_forecast(features):
 
 def main():
     ensure_output_dir()
+
+    print("Market regime filter config:", flush=True)
+    print(f"  USE_MARKET_REGIME_FILTER={USE_MARKET_REGIME_FILTER}", flush=True)
+    print(f"  REGIME_MIN_MA_RATIO_28={REGIME_MIN_MA_RATIO_28}", flush=True)
+    print(f"  REGIME_MIN_RETURN_20D={REGIME_MIN_RETURN_20D}", flush=True)
+    print(f"  REGIME_MAX_HIGH_LOW_RANGE={REGIME_MAX_HIGH_LOW_RANGE}", flush=True)
 
     raw_data = download_data(SYMBOLS)
     clean = clean_data(raw_data)
