@@ -59,7 +59,7 @@ PARAMETER_GRID = [
         "depth": 3,
         "learning_rate": 0.03,
         "l2_leaf_reg": 5,
-        "random_seed": 42,
+        "random_state": 42,
         "verbose": False,
     },
     {
@@ -68,7 +68,7 @@ PARAMETER_GRID = [
         "depth": 3,
         "learning_rate": 0.02,
         "l2_leaf_reg": 5,
-        "random_seed": 42,
+        "random_state": 42,
         "verbose": False,
     },
     {
@@ -77,7 +77,7 @@ PARAMETER_GRID = [
         "depth": 3,
         "learning_rate": 0.03,
         "l2_leaf_reg": 3,
-        "random_seed": 42,
+        "random_state": 42,
         "verbose": False,
     },
     {
@@ -86,7 +86,7 @@ PARAMETER_GRID = [
         "depth": 3,
         "learning_rate": 0.03,
         "l2_leaf_reg": 5,
-        "random_seed": 42,
+        "random_state": 42,
         "verbose": False,
     },
     {
@@ -95,7 +95,7 @@ PARAMETER_GRID = [
         "depth": 3,
         "learning_rate": 0.03,
         "l2_leaf_reg": 7,
-        "random_seed": 42,
+        "random_state": 42,
         "verbose": False,
     },
     {
@@ -104,7 +104,7 @@ PARAMETER_GRID = [
         "depth": 3,
         "learning_rate": 0.03,
         "l2_leaf_reg": 5,
-        "random_seed": 42,
+        "random_state": 42,
         "verbose": False,
     },
     {
@@ -113,7 +113,7 @@ PARAMETER_GRID = [
         "depth": 3,
         "learning_rate": 0.03,
         "l2_leaf_reg": 5,
-        "random_seed": 42,
+        "random_state": 42,
         "verbose": False,
     },
     {
@@ -122,7 +122,7 @@ PARAMETER_GRID = [
         "depth": 4,
         "learning_rate": 0.03,
         "l2_leaf_reg": 5,
-        "random_seed": 42,
+        "random_state": 42,
         "verbose": False,
     },
 ]
