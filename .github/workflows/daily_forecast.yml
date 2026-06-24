@@ -17,6 +17,7 @@ on:
           - ridge
           - elasticnet
           - ensemble
+
       smoke_test:
         description: "Run smoke test?"
         required: true
@@ -25,6 +26,30 @@ on:
         options:
           - "true"
           - "false"
+
+      use_market_regime_filter:
+        description: "Use market regime filter? ExtraTrees only for now"
+        required: true
+        default: "true"
+        type: choice
+        options:
+          - "true"
+          - "false"
+
+      regime_min_ma_ratio_28:
+        description: "Minimum 28d MA ratio for regime filter"
+        required: true
+        default: "0.98"
+
+      regime_min_return_20d:
+        description: "Minimum 20d past return for regime filter"
+        required: true
+        default: "-0.08"
+
+      regime_max_high_low_range:
+        description: "Maximum high-low range for regime filter"
+        required: true
+        default: "0.12"
 
 permissions:
   contents: write
@@ -42,6 +67,11 @@ jobs:
       SMOKE_TEST_DAYS_PER_SYMBOL: "3"
       SMOKE_TEST_PARAMETER_COUNT: "1"
       MIN_POSITIVE_PREDICTIONS: "30"
+
+      USE_MARKET_REGIME_FILTER: ${{ github.event.inputs.use_market_regime_filter }}
+      REGIME_MIN_MA_RATIO_28: ${{ github.event.inputs.regime_min_ma_ratio_28 }}
+      REGIME_MIN_RETURN_20D: ${{ github.event.inputs.regime_min_return_20d }}
+      REGIME_MAX_HIGH_LOW_RANGE: ${{ github.event.inputs.regime_max_high_low_range }}
 
     steps:
       - name: Checkout repository
@@ -73,21 +103,29 @@ jobs:
 
           if [ "$MODEL" = "randomforest" ]; then
             MODEL_NAME=RandomForest python src/forecast_pipeline_randomforest.py
+
           elif [ "$MODEL" = "extratrees" ]; then
             MODEL_NAME=ExtraTrees python src/forecast_pipeline_extratrees.py
+
           elif [ "$MODEL" = "xgboost" ]; then
             MODEL_NAME=XGBoost python src/forecast_pipeline_xgboost.py
+
           elif [ "$MODEL" = "lightgbm" ]; then
             MODEL_NAME=LightGBM python src/forecast_pipeline_lightgbm.py
+
           elif [ "$MODEL" = "catboost" ]; then
             MODEL_NAME=CatBoost python src/forecast_pipeline_catboost.py
+
           elif [ "$MODEL" = "ridge" ]; then
             MODEL_NAME=Ridge python src/forecast_pipeline_ridgeregression.py
+
           elif [ "$MODEL" = "elasticnet" ]; then
             MODEL_NAME=ElasticNet python src/forecast_pipeline_elasticnetlogreg.py
+
           elif [ "$MODEL" = "ensemble" ]; then
             python src/ensemble_backtest.py
             python src/ensemble_production.py
+
           else
             echo "Unknown model: $MODEL"
             exit 1
@@ -107,7 +145,23 @@ jobs:
 
           if git diff --cached --quiet; then
             echo "No output changes to commit."
-          else
-            git commit -m "Run full backtest: ${{ github.event.inputs.model }}"
-            git push origin HEAD:main
+            exit 0
           fi
+
+          git commit -m "Run full backtest: ${{ github.event.inputs.model }}"
+
+          git fetch origin main
+
+          if ! git rebase origin/main; then
+            echo "Rebase conflict detected."
+            echo "Keeping current workflow generated output files."
+
+            for file in outputs/*.csv; do
+              git checkout --theirs "$file" || true
+              git add "$file" || true
+            done
+
+            GIT_EDITOR=true git rebase --continue
+          fi
+
+          git push origin HEAD:main
