@@ -66,6 +66,34 @@ EXCLUDE_RAW_PRICE_LEVEL_FEATURES = (
     os.getenv("EXCLUDE_RAW_PRICE_LEVEL_FEATURES", "true").lower() == "true"
 )
 
+# Generic feature exclusion framework.
+# Use this to run scalable feature ablation tests without editing Python each time.
+#
+# Exact names example:
+#   EXCLUDE_FEATURE_NAMES=is_up_day,is_down_day,consecutive_up_days
+# Prefix example:
+#   EXCLUDE_FEATURE_PREFIXES=up_days_,down_days_,return_volatility_
+# Label example:
+#   EXCLUDE_FEATURE_TEST_LABEL=nostreak_novolchop
+EXCLUDE_FEATURES_ENABLED = (
+    os.getenv("EXCLUDE_FEATURES_ENABLED", "false").lower() == "true"
+)
+
+EXCLUDE_FEATURE_NAMES = [
+    x.strip()
+    for x in os.getenv("EXCLUDE_FEATURE_NAMES", "").split(",")
+    if x.strip()
+]
+
+EXCLUDE_FEATURE_PREFIXES = [
+    x.strip()
+    for x in os.getenv("EXCLUDE_FEATURE_PREFIXES", "").split(",")
+    if x.strip()
+]
+
+# This label is appended to backtest_name so your outputs clearly show what was tested.
+EXCLUDE_FEATURE_TEST_LABEL = os.getenv("EXCLUDE_FEATURE_TEST_LABEL", "").strip()
+
 MA_WINDOWS = [3, 5, 7, 14, 20, 28, 52]
 ROLLING_EXTREME_WINDOWS = [3, 5, 10, 20, 52]
 VOLATILITY_WINDOWS = [3, 5, 10, 20]
@@ -250,6 +278,55 @@ def safe_divide(numerator, denominator):
     if denominator is None or pd.isna(denominator) or denominator == 0:
         return np.nan
     return numerator / denominator
+
+
+def is_custom_excluded_feature(feature_name):
+    """Returns True when a feature should be excluded by the generic YAML-controlled exclusion list."""
+
+    if not EXCLUDE_FEATURES_ENABLED:
+        return False
+
+    if feature_name in EXCLUDE_FEATURE_NAMES:
+        return True
+
+    return any(
+        feature_name.startswith(prefix)
+        for prefix in EXCLUDE_FEATURE_PREFIXES
+    )
+
+
+def get_feature_set_suffix():
+    """Builds a compact suffix that documents the active feature set in output backtest names."""
+
+    suffixes = []
+
+    if EXCLUDE_RAW_PRICE_LEVEL_FEATURES:
+        suffixes.append("no_rawpx")
+    else:
+        suffixes.append("rawpx_on")
+
+    if EXCLUDE_FEATURES_ENABLED:
+        if EXCLUDE_FEATURE_TEST_LABEL:
+            suffixes.append(EXCLUDE_FEATURE_TEST_LABEL)
+        else:
+            suffixes.append("custom_excl")
+
+    return "_".join(suffixes)
+
+
+def get_effective_backtest_name(base_backtest_name):
+    """Adds the feature-set suffix to the base hyperparameter backtest name."""
+
+    return f"{base_backtest_name}__fs_{get_feature_set_suffix()}"
+
+
+def get_excluded_feature_config_string(values):
+    """Stores exclusion config as a stable semicolon-separated string for CSV outputs."""
+
+    if not values:
+        return ""
+
+    return ";".join(values)
 
 
 def get_native_importance_array(model):
@@ -946,15 +1023,42 @@ def get_feature_columns(df):
             if col.startswith("volume_ma_"):
                 continue
 
+            if is_custom_excluded_feature(col):
+                continue
+
             cleaned_feature_cols.append(col)
 
         feature_cols = cleaned_feature_cols
 
+    # Apply generic feature exclusions even when raw price-level exclusion is disabled.
+    if EXCLUDE_FEATURES_ENABLED:
+        before_custom_exclusion_count = len(feature_cols)
+        feature_cols = [
+            col
+            for col in feature_cols
+            if not is_custom_excluded_feature(col)
+        ]
+        custom_excluded_count = before_custom_exclusion_count - len(feature_cols)
+    else:
+        custom_excluded_count = 0
+
     print(
         f"Using {len(feature_cols):,} numeric feature columns. "
-        f"EXCLUDE_RAW_PRICE_LEVEL_FEATURES={EXCLUDE_RAW_PRICE_LEVEL_FEATURES}",
+        f"EXCLUDE_RAW_PRICE_LEVEL_FEATURES={EXCLUDE_RAW_PRICE_LEVEL_FEATURES} | "
+        f"EXCLUDE_FEATURES_ENABLED={EXCLUDE_FEATURES_ENABLED} | "
+        f"custom_excluded_count={custom_excluded_count} | "
+        f"feature_set_suffix={get_feature_set_suffix()}",
         flush=True,
     )
+
+    if EXCLUDE_FEATURES_ENABLED:
+        print(
+            f"Custom feature exclusion config | "
+            f"names={get_excluded_feature_config_string(EXCLUDE_FEATURE_NAMES)} | "
+            f"prefixes={get_excluded_feature_config_string(EXCLUDE_FEATURE_PREFIXES)} | "
+            f"label={EXCLUDE_FEATURE_TEST_LABEL}",
+            flush=True,
+        )
 
     return feature_cols
 
@@ -1069,6 +1173,13 @@ def build_ordered_output_row(output_row):
         "run_timestamp",
         "backtest_name",
         "model_name",
+        "base_backtest_name",
+        "feature_set_suffix",
+        "exclude_raw_price_level_features",
+        "exclude_features_enabled",
+        "exclude_feature_names",
+        "exclude_feature_prefixes",
+        "exclude_feature_test_label",
         "feature_1",
         "feature_2",
         "feature_3",
@@ -1138,7 +1249,9 @@ def build_ordered_output_row(output_row):
 
 
 def run_backtest(features, model_params, output_path):
-    print(f"\nRunning backtest: {model_params['backtest_name']}", flush=True)
+    effective_backtest_name = get_effective_backtest_name(model_params["backtest_name"])
+
+    print(f"\nRunning backtest: {effective_backtest_name}", flush=True)
 
     results = []
     feature_importance_rows = []
@@ -1211,15 +1324,22 @@ def run_backtest(features, model_params, output_path):
             print(
                 f"  Testing date: {test_date.date()} | "
                 f"prediction input date={previous_trading_date.date()} | "
-                f"backtest={model_params['backtest_name']} | "
+                f"backtest={effective_backtest_name} | "
                 f"symbol={symbol}",
                 flush=True,
             )
 
             output_row = {
                 "run_timestamp": RUN_TIMESTAMP,
-                "backtest_name": model_params["backtest_name"],
+                "backtest_name": effective_backtest_name,
+                "base_backtest_name": model_params["backtest_name"],
                 "model_name": MODEL_NAME,
+                "feature_set_suffix": get_feature_set_suffix(),
+                "exclude_raw_price_level_features": bool(EXCLUDE_RAW_PRICE_LEVEL_FEATURES),
+                "exclude_features_enabled": bool(EXCLUDE_FEATURES_ENABLED),
+                "exclude_feature_names": get_excluded_feature_config_string(EXCLUDE_FEATURE_NAMES),
+                "exclude_feature_prefixes": get_excluded_feature_config_string(EXCLUDE_FEATURE_PREFIXES),
+                "exclude_feature_test_label": EXCLUDE_FEATURE_TEST_LABEL,
                 "feature_1": None,
                 "feature_2": None,
                 "feature_3": None,
@@ -1365,7 +1485,7 @@ def run_backtest(features, model_params, output_path):
                         feature_cols=feature_cols,
                         run_timestamp=RUN_TIMESTAMP,
                         model_name=MODEL_NAME,
-                        backtest_name=model_params["backtest_name"],
+                        backtest_name=effective_backtest_name,
                         symbol=symbol,
                         test_start_date=test_date.date(),
                         prediction_input_date=previous_trading_date.date(),
@@ -1387,7 +1507,7 @@ def run_backtest(features, model_params, output_path):
                             feature_cols=feature_cols,
                             run_timestamp=RUN_TIMESTAMP,
                             model_name=MODEL_NAME,
-                            backtest_name=model_params["backtest_name"],
+                            backtest_name=effective_backtest_name,
                             symbol=symbol,
                             test_start_date=test_date.date(),
                             prediction_input_date=previous_trading_date.date(),
@@ -1467,7 +1587,7 @@ def run_backtest(features, model_params, output_path):
 
             print(
                 f"    Appended result | "
-                f"{model_params['backtest_name']} | "
+                f"{effective_backtest_name} | "
                 f"{symbol} | "
                 f"test_start={test_date.date()} | "
                 f"prev_close={previous_close_before_test_start:.4f} | "
@@ -1482,7 +1602,7 @@ def run_backtest(features, model_params, output_path):
     backtest_results = pd.DataFrame(results)
 
     if backtest_results.empty:
-        print(f"No backtest results created for {model_params['backtest_name']}.", flush=True)
+        print(f"No backtest results created for {effective_backtest_name}.", flush=True)
         return backtest_results
 
     backtest_results = backtest_results.sort_values(
@@ -1490,7 +1610,7 @@ def run_backtest(features, model_params, output_path):
     ).reset_index(drop=True)
 
     print(
-        f"Backtest {model_params['backtest_name']} created "
+        f"Backtest {effective_backtest_name} created "
         f"{len(backtest_results):,} rows.",
         flush=True,
     )
@@ -1616,8 +1736,10 @@ def run_production_forecast(features):
     forecast_date = datetime.utcnow().date()
     model_params = PRODUCTION_MODEL_PARAMS
 
+    effective_production_model_name = get_effective_backtest_name(model_params["backtest_name"])
+
     print(
-        f"Production model params: {model_params['backtest_name']}",
+        f"Production model params: {effective_production_model_name}",
         flush=True,
     )
 
@@ -1646,7 +1768,14 @@ def run_production_forecast(features):
             "stock_symbol": symbol,
             "stock_start_value": float(latest_row.iloc[0]["open"]),
             "stock_end_value": latest_close,
-            "production_model_name": model_params["backtest_name"],
+            "production_model_name": effective_production_model_name,
+            "production_model_base_name": model_params["backtest_name"],
+            "feature_set_suffix": get_feature_set_suffix(),
+            "exclude_raw_price_level_features": bool(EXCLUDE_RAW_PRICE_LEVEL_FEATURES),
+            "exclude_features_enabled": bool(EXCLUDE_FEATURES_ENABLED),
+            "exclude_feature_names": get_excluded_feature_config_string(EXCLUDE_FEATURE_NAMES),
+            "exclude_feature_prefixes": get_excluded_feature_config_string(EXCLUDE_FEATURE_PREFIXES),
+            "exclude_feature_test_label": EXCLUDE_FEATURE_TEST_LABEL,
             "n_estimators": model_params["n_estimators"],
             "max_depth": model_params["max_depth"],
             "min_samples_leaf": model_params["min_samples_leaf"],
@@ -1735,6 +1864,11 @@ def main():
     print(f"  REGIME_MIN_RETURN_20D={REGIME_MIN_RETURN_20D}", flush=True)
     print(f"  REGIME_MAX_HIGH_LOW_RANGE={REGIME_MAX_HIGH_LOW_RANGE}", flush=True)
     print(f"  EXCLUDE_RAW_PRICE_LEVEL_FEATURES={EXCLUDE_RAW_PRICE_LEVEL_FEATURES}", flush=True)
+    print(f"  EXCLUDE_FEATURES_ENABLED={EXCLUDE_FEATURES_ENABLED}", flush=True)
+    print(f"  EXCLUDE_FEATURE_NAMES={get_excluded_feature_config_string(EXCLUDE_FEATURE_NAMES)}", flush=True)
+    print(f"  EXCLUDE_FEATURE_PREFIXES={get_excluded_feature_config_string(EXCLUDE_FEATURE_PREFIXES)}", flush=True)
+    print(f"  EXCLUDE_FEATURE_TEST_LABEL={EXCLUDE_FEATURE_TEST_LABEL}", flush=True)
+    print(f"  FEATURE_SET_SUFFIX={get_feature_set_suffix()}", flush=True)
 
     raw_data = download_data(SYMBOLS)
     clean = clean_data(raw_data)
