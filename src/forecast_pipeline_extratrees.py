@@ -1,4 +1,5 @@
 import os
+import re
 import warnings
 from datetime import datetime, timedelta
 
@@ -32,8 +33,14 @@ LAG_DAYS = list(range(1, 53))
 
 RETURN_WINDOWS = [5, 7, 10, 14, 20]
 
-BACKTEST_START_DATE = "2025-11-01"
-BACKTEST_END_DATE = "2026-05-31"
+# Backtest window is controlled from YAML in months.
+# Example: BACKTEST_DURATION_MONTHS=8 and BACKTEST_END_DATE=2026-05-31
+# tests the final 8 months ending on 2026-05-31.
+BACKTEST_END_DATE = os.getenv("BACKTEST_END_DATE", "2026-05-31")
+BACKTEST_DURATION_MONTHS = int(os.getenv("BACKTEST_DURATION_MONTHS", "8"))
+BACKTEST_START_DATE = (
+    pd.to_datetime(BACKTEST_END_DATE) - pd.DateOffset(months=BACKTEST_DURATION_MONTHS)
+).strftime("%Y-%m-%d")
 
 OUTPUT_DIR = "outputs"
 BACKTEST_OUTPUT_PATH = os.path.join(OUTPUT_DIR, "backtest_results.csv")
@@ -66,33 +73,42 @@ EXCLUDE_RAW_PRICE_LEVEL_FEATURES = (
     os.getenv("EXCLUDE_RAW_PRICE_LEVEL_FEATURES", "true").lower() == "true"
 )
 
-# Generic feature exclusion framework.
-# Use this to run scalable feature ablation tests without editing Python each time.
+# Generic feature selection framework.
 #
-# Exact names example:
-#   EXCLUDE_FEATURE_NAMES=is_up_day,is_down_day,consecutive_up_days
-# Prefix example:
-#   EXCLUDE_FEATURE_PREFIXES=up_days_,down_days_,return_volatility_
-# Label example:
-#   EXCLUDE_FEATURE_TEST_LABEL=nostreak_novolchop
-EXCLUDE_FEATURES_ENABLED = (
-    os.getenv("EXCLUDE_FEATURES_ENABLED", "false").lower() == "true"
-)
+# FEATURE_SELECTION_MODE controls which engineered features are allowed into the model:
+#   all     = use all numeric engineered features, after optional raw price-level removal
+#   include = use only features matching INCLUDE_FEATURE_NAMES / INCLUDE_FEATURE_PREFIXES
+#   exclude = use all eligible features except those matching EXCLUDE_FEATURE_NAMES / EXCLUDE_FEATURE_PREFIXES
+#
+# This lets you start with a small, intentional subset and add feature groups incrementally
+# without editing the Python code each time.
+FEATURE_SELECTION_MODE = os.getenv("FEATURE_SELECTION_MODE", "all").strip().lower()
 
-EXCLUDE_FEATURE_NAMES = [
-    x.strip()
-    for x in os.getenv("EXCLUDE_FEATURE_NAMES", "").split(",")
-    if x.strip()
-]
+if FEATURE_SELECTION_MODE not in {"all", "include", "exclude"}:
+    raise ValueError(
+        "FEATURE_SELECTION_MODE must be one of: all, include, exclude. "
+        f"Received: {FEATURE_SELECTION_MODE}"
+    )
 
-EXCLUDE_FEATURE_PREFIXES = [
-    x.strip()
-    for x in os.getenv("EXCLUDE_FEATURE_PREFIXES", "").split(",")
-    if x.strip()
-]
+def parse_csv_env_var(env_name):
+    return [
+        x.strip()
+        for x in os.getenv(env_name, "").split(",")
+        if x.strip()
+    ]
 
-# This label is appended to backtest_name so your outputs clearly show what was tested.
-EXCLUDE_FEATURE_TEST_LABEL = os.getenv("EXCLUDE_FEATURE_TEST_LABEL", "").strip()
+INCLUDE_FEATURE_NAMES = parse_csv_env_var("INCLUDE_FEATURE_NAMES")
+INCLUDE_FEATURE_PREFIXES = parse_csv_env_var("INCLUDE_FEATURE_PREFIXES")
+EXCLUDE_FEATURE_NAMES = parse_csv_env_var("EXCLUDE_FEATURE_NAMES")
+EXCLUDE_FEATURE_PREFIXES = parse_csv_env_var("EXCLUDE_FEATURE_PREFIXES")
+
+# This label is appended to the feature-set part of backtest_name so outputs clearly show what was tested.
+# Examples: core_reversal, core_reversal_candle, no_streak, all_features
+FEATURE_TEST_LABEL = os.getenv("FEATURE_TEST_LABEL", "").strip()
+
+# Additional free-text suffix from YAML, appended after duration + feature-set suffix.
+# Use this for experiment labels like v2, no_bad_features, candle_addon, etc.
+ADDITIONAL_BACKTEST_SUFFIX = os.getenv("ADDITIONAL_BACKTEST_SUFFIX", "").strip()
 
 MA_WINDOWS = [3, 5, 7, 14, 20, 28, 52]
 ROLLING_EXTREME_WINDOWS = [3, 5, 10, 20, 52]
@@ -280,23 +296,55 @@ def safe_divide(numerator, denominator):
     return numerator / denominator
 
 
-def is_custom_excluded_feature(feature_name):
-    """Returns True when a feature should be excluded by the generic YAML-controlled exclusion list."""
+def feature_matches_any_rule(feature_name, exact_names, prefixes):
+    """Returns True when a feature matches any exact-name or prefix rule."""
 
-    if not EXCLUDE_FEATURES_ENABLED:
-        return False
-
-    if feature_name in EXCLUDE_FEATURE_NAMES:
+    if feature_name in exact_names:
         return True
 
     return any(
         feature_name.startswith(prefix)
-        for prefix in EXCLUDE_FEATURE_PREFIXES
+        for prefix in prefixes
     )
 
 
+def is_custom_included_feature(feature_name):
+    """Returns True when a feature is allowed by the YAML-controlled include list."""
+
+    return feature_matches_any_rule(
+        feature_name=feature_name,
+        exact_names=INCLUDE_FEATURE_NAMES,
+        prefixes=INCLUDE_FEATURE_PREFIXES,
+    )
+
+
+def is_custom_excluded_feature(feature_name):
+    """Returns True when a feature is blocked by the YAML-controlled exclude list."""
+
+    return feature_matches_any_rule(
+        feature_name=feature_name,
+        exact_names=EXCLUDE_FEATURE_NAMES,
+        prefixes=EXCLUDE_FEATURE_PREFIXES,
+    )
+
+
+def sanitize_name_part(value):
+    """Returns a safe compact label for backtest names and pivot tables."""
+
+    value = str(value or "").strip().lower()
+    value = re.sub(r"[^a-z0-9]+", "_", value)
+    value = re.sub(r"_+", "_", value).strip("_")
+    return value
+
+
+def get_backtest_duration_suffix():
+    """Documents the YAML-controlled backtest duration in months."""
+
+    return f"bt{BACKTEST_DURATION_MONTHS}m"
+
+
 def get_feature_set_suffix():
-    """Builds a compact suffix that documents the active feature set in output backtest names."""
+    """Builds a compact suffix that documents the active feature set."""
 
     suffixes = []
 
@@ -305,23 +353,64 @@ def get_feature_set_suffix():
     else:
         suffixes.append("rawpx_on")
 
-    if EXCLUDE_FEATURES_ENABLED:
-        if EXCLUDE_FEATURE_TEST_LABEL:
-            suffixes.append(EXCLUDE_FEATURE_TEST_LABEL)
-        else:
-            suffixes.append("custom_excl")
+    feature_label = sanitize_name_part(FEATURE_TEST_LABEL)
+
+    if feature_label:
+        suffixes.append(feature_label)
+    else:
+        suffixes.append(FEATURE_SELECTION_MODE)
 
     return "_".join(suffixes)
 
 
+def get_additional_backtest_suffix():
+    """Returns optional YAML free-text experiment suffix."""
+
+    return sanitize_name_part(ADDITIONAL_BACKTEST_SUFFIX)
+
+
 def get_effective_backtest_name(base_backtest_name):
-    """Adds the feature-set suffix to the base hyperparameter backtest name."""
+    """Adds duration, feature-set and optional YAML suffix to the base hyperparameter name."""
 
-    return f"{base_backtest_name}__fs_{get_feature_set_suffix()}"
+    parts = [
+        base_backtest_name,
+        get_backtest_duration_suffix(),
+        f"fs_{get_feature_set_suffix()}",
+    ]
+
+    additional_suffix = get_additional_backtest_suffix()
+
+    if additional_suffix:
+        parts.append(additional_suffix)
+
+    return "__".join(parts)
 
 
-def get_excluded_feature_config_string(values):
-    """Stores exclusion config as a stable semicolon-separated string for CSV outputs."""
+def is_raw_price_level_feature(feature_name):
+    """Returns True for raw price/level features that are usually non-stationary."""
+
+    if feature_name in {"open", "high", "low", "close", "volume", "other_symbol_close"}:
+        return True
+
+    if feature_name.startswith("close_lag_") and not feature_name.endswith("_ratio"):
+        return True
+
+    if feature_name.startswith("ma_") and not (
+        feature_name.startswith("ma_ratio_") or feature_name.startswith("ma_slope_")
+    ):
+        return True
+
+    if feature_name.startswith("rolling_high_") or feature_name.startswith("rolling_low_"):
+        return True
+
+    if feature_name.startswith("volume_ma_"):
+        return True
+
+    return False
+
+
+def get_feature_config_string(values):
+    """Stores feature-selection config as a stable semicolon-separated string for CSV outputs."""
 
     if not values:
         return ""
@@ -991,74 +1080,74 @@ def get_feature_columns(df):
 
     excluded_cols += target_cols
 
-    feature_cols = [
+    all_numeric_feature_cols = [
         col
         for col in df.columns
         if col not in excluded_cols
         and pd.api.types.is_numeric_dtype(df[col])
     ]
 
-    if EXCLUDE_RAW_PRICE_LEVEL_FEATURES:
-        cleaned_feature_cols = []
+    feature_cols = []
+    raw_price_excluded_count = 0
 
-        for col in feature_cols:
-            # Exclude raw OHLCV levels. They are not stationary.
-            if col in {"open", "high", "low", "close", "volume", "other_symbol_close"}:
-                continue
+    for col in all_numeric_feature_cols:
+        if EXCLUDE_RAW_PRICE_LEVEL_FEATURES and is_raw_price_level_feature(col):
+            raw_price_excluded_count += 1
+            continue
 
-            # Exclude raw close lag levels, but keep close_lag_X_ratio.
-            if col.startswith("close_lag_") and not col.endswith("_ratio"):
-                continue
+        feature_cols.append(col)
 
-            # Exclude raw moving average / rolling high / rolling low price levels.
-            # Keep ratio/slope/drawdown/rebound versions.
-            if col.startswith("ma_") and not (
-                col.startswith("ma_ratio_") or col.startswith("ma_slope_")
-            ):
-                continue
+    before_selection_count = len(feature_cols)
 
-            if col.startswith("rolling_high_") or col.startswith("rolling_low_"):
-                continue
+    if FEATURE_SELECTION_MODE == "include":
+        feature_cols = [
+            col
+            for col in feature_cols
+            if is_custom_included_feature(col)
+        ]
+        selection_removed_count = before_selection_count - len(feature_cols)
 
-            if col.startswith("volume_ma_"):
-                continue
+        if not feature_cols:
+            raise RuntimeError(
+                "FEATURE_SELECTION_MODE=include selected zero features. "
+                "Check INCLUDE_FEATURE_NAMES and INCLUDE_FEATURE_PREFIXES."
+            )
 
-            if is_custom_excluded_feature(col):
-                continue
-
-            cleaned_feature_cols.append(col)
-
-        feature_cols = cleaned_feature_cols
-
-    # Apply generic feature exclusions even when raw price-level exclusion is disabled.
-    if EXCLUDE_FEATURES_ENABLED:
-        before_custom_exclusion_count = len(feature_cols)
+    elif FEATURE_SELECTION_MODE == "exclude":
         feature_cols = [
             col
             for col in feature_cols
             if not is_custom_excluded_feature(col)
         ]
-        custom_excluded_count = before_custom_exclusion_count - len(feature_cols)
+        selection_removed_count = before_selection_count - len(feature_cols)
+
+        if not feature_cols:
+            raise RuntimeError(
+                "FEATURE_SELECTION_MODE=exclude removed all features. "
+                "Check EXCLUDE_FEATURE_NAMES and EXCLUDE_FEATURE_PREFIXES."
+            )
+
     else:
-        custom_excluded_count = 0
+        selection_removed_count = 0
 
     print(
         f"Using {len(feature_cols):,} numeric feature columns. "
-        f"EXCLUDE_RAW_PRICE_LEVEL_FEATURES={EXCLUDE_RAW_PRICE_LEVEL_FEATURES} | "
-        f"EXCLUDE_FEATURES_ENABLED={EXCLUDE_FEATURES_ENABLED} | "
-        f"custom_excluded_count={custom_excluded_count} | "
+        f"raw_price_excluded_count={raw_price_excluded_count} | "
+        f"FEATURE_SELECTION_MODE={FEATURE_SELECTION_MODE} | "
+        f"selection_removed_count={selection_removed_count} | "
         f"feature_set_suffix={get_feature_set_suffix()}",
         flush=True,
     )
 
-    if EXCLUDE_FEATURES_ENABLED:
-        print(
-            f"Custom feature exclusion config | "
-            f"names={get_excluded_feature_config_string(EXCLUDE_FEATURE_NAMES)} | "
-            f"prefixes={get_excluded_feature_config_string(EXCLUDE_FEATURE_PREFIXES)} | "
-            f"label={EXCLUDE_FEATURE_TEST_LABEL}",
-            flush=True,
-        )
+    print(
+        f"Feature selection config | "
+        f"include_names={get_feature_config_string(INCLUDE_FEATURE_NAMES)} | "
+        f"include_prefixes={get_feature_config_string(INCLUDE_FEATURE_PREFIXES)} | "
+        f"exclude_names={get_feature_config_string(EXCLUDE_FEATURE_NAMES)} | "
+        f"exclude_prefixes={get_feature_config_string(EXCLUDE_FEATURE_PREFIXES)} | "
+        f"feature_test_label={FEATURE_TEST_LABEL}",
+        flush=True,
+    )
 
     return feature_cols
 
@@ -1176,10 +1265,16 @@ def build_ordered_output_row(output_row):
         "base_backtest_name",
         "feature_set_suffix",
         "exclude_raw_price_level_features",
-        "exclude_features_enabled",
+        "feature_selection_mode",
+        "include_feature_names",
+        "include_feature_prefixes",
         "exclude_feature_names",
         "exclude_feature_prefixes",
-        "exclude_feature_test_label",
+        "feature_test_label",
+        "additional_backtest_suffix",
+        "backtest_duration_months",
+        "backtest_start_date_config",
+        "backtest_end_date_config",
         "feature_1",
         "feature_2",
         "feature_3",
@@ -1336,10 +1431,16 @@ def run_backtest(features, model_params, output_path):
                 "model_name": MODEL_NAME,
                 "feature_set_suffix": get_feature_set_suffix(),
                 "exclude_raw_price_level_features": bool(EXCLUDE_RAW_PRICE_LEVEL_FEATURES),
-                "exclude_features_enabled": bool(EXCLUDE_FEATURES_ENABLED),
-                "exclude_feature_names": get_excluded_feature_config_string(EXCLUDE_FEATURE_NAMES),
-                "exclude_feature_prefixes": get_excluded_feature_config_string(EXCLUDE_FEATURE_PREFIXES),
-                "exclude_feature_test_label": EXCLUDE_FEATURE_TEST_LABEL,
+                "feature_selection_mode": FEATURE_SELECTION_MODE,
+                "include_feature_names": get_feature_config_string(INCLUDE_FEATURE_NAMES),
+                "include_feature_prefixes": get_feature_config_string(INCLUDE_FEATURE_PREFIXES),
+                "exclude_feature_names": get_feature_config_string(EXCLUDE_FEATURE_NAMES),
+                "exclude_feature_prefixes": get_feature_config_string(EXCLUDE_FEATURE_PREFIXES),
+                "feature_test_label": FEATURE_TEST_LABEL,
+                "additional_backtest_suffix": get_additional_backtest_suffix(),
+                "backtest_duration_months": BACKTEST_DURATION_MONTHS,
+                "backtest_start_date_config": BACKTEST_START_DATE,
+                "backtest_end_date_config": BACKTEST_END_DATE,
                 "feature_1": None,
                 "feature_2": None,
                 "feature_3": None,
@@ -1772,10 +1873,12 @@ def run_production_forecast(features):
             "production_model_base_name": model_params["backtest_name"],
             "feature_set_suffix": get_feature_set_suffix(),
             "exclude_raw_price_level_features": bool(EXCLUDE_RAW_PRICE_LEVEL_FEATURES),
-            "exclude_features_enabled": bool(EXCLUDE_FEATURES_ENABLED),
-            "exclude_feature_names": get_excluded_feature_config_string(EXCLUDE_FEATURE_NAMES),
-            "exclude_feature_prefixes": get_excluded_feature_config_string(EXCLUDE_FEATURE_PREFIXES),
-            "exclude_feature_test_label": EXCLUDE_FEATURE_TEST_LABEL,
+            "feature_selection_mode": FEATURE_SELECTION_MODE,
+            "include_feature_names": get_feature_config_string(INCLUDE_FEATURE_NAMES),
+            "include_feature_prefixes": get_feature_config_string(INCLUDE_FEATURE_PREFIXES),
+            "exclude_feature_names": get_feature_config_string(EXCLUDE_FEATURE_NAMES),
+            "exclude_feature_prefixes": get_feature_config_string(EXCLUDE_FEATURE_PREFIXES),
+            "feature_test_label": FEATURE_TEST_LABEL,
             "n_estimators": model_params["n_estimators"],
             "max_depth": model_params["max_depth"],
             "min_samples_leaf": model_params["min_samples_leaf"],
@@ -1864,10 +1967,16 @@ def main():
     print(f"  REGIME_MIN_RETURN_20D={REGIME_MIN_RETURN_20D}", flush=True)
     print(f"  REGIME_MAX_HIGH_LOW_RANGE={REGIME_MAX_HIGH_LOW_RANGE}", flush=True)
     print(f"  EXCLUDE_RAW_PRICE_LEVEL_FEATURES={EXCLUDE_RAW_PRICE_LEVEL_FEATURES}", flush=True)
-    print(f"  EXCLUDE_FEATURES_ENABLED={EXCLUDE_FEATURES_ENABLED}", flush=True)
-    print(f"  EXCLUDE_FEATURE_NAMES={get_excluded_feature_config_string(EXCLUDE_FEATURE_NAMES)}", flush=True)
-    print(f"  EXCLUDE_FEATURE_PREFIXES={get_excluded_feature_config_string(EXCLUDE_FEATURE_PREFIXES)}", flush=True)
-    print(f"  EXCLUDE_FEATURE_TEST_LABEL={EXCLUDE_FEATURE_TEST_LABEL}", flush=True)
+    print(f"  FEATURE_SELECTION_MODE={FEATURE_SELECTION_MODE}", flush=True)
+    print(f"  INCLUDE_FEATURE_NAMES={get_feature_config_string(INCLUDE_FEATURE_NAMES)}", flush=True)
+    print(f"  INCLUDE_FEATURE_PREFIXES={get_feature_config_string(INCLUDE_FEATURE_PREFIXES)}", flush=True)
+    print(f"  EXCLUDE_FEATURE_NAMES={get_feature_config_string(EXCLUDE_FEATURE_NAMES)}", flush=True)
+    print(f"  EXCLUDE_FEATURE_PREFIXES={get_feature_config_string(EXCLUDE_FEATURE_PREFIXES)}", flush=True)
+    print(f"  FEATURE_TEST_LABEL={FEATURE_TEST_LABEL}", flush=True)
+    print(f"  ADDITIONAL_BACKTEST_SUFFIX={get_additional_backtest_suffix()}", flush=True)
+    print(f"  BACKTEST_DURATION_MONTHS={BACKTEST_DURATION_MONTHS}", flush=True)
+    print(f"  BACKTEST_START_DATE={BACKTEST_START_DATE}", flush=True)
+    print(f"  BACKTEST_END_DATE={BACKTEST_END_DATE}", flush=True)
     print(f"  FEATURE_SET_SUFFIX={get_feature_set_suffix()}", flush=True)
 
     raw_data = download_data(SYMBOLS)
