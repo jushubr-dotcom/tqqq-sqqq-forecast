@@ -18,14 +18,33 @@ def add_horizon_success_metrics(
     return_pct_actual,
     loss_probability=None,
     buy_return_threshold=BUY_RETURN_THRESHOLD,
+    model_buy_signal=None,
 ):
-    count_pred_positive = int(return_pct_pred > buy_return_threshold)
+    """
+    Adds model ON/OFF success metrics for one horizon.
+
+    Key point:
+    - If model_buy_signal is provided, it controls whether the model is ON.
+    - If model_buy_signal is not provided, fallback remains old behaviour:
+      model ON = return_pct_pred > buy_return_threshold.
+
+    This makes the function backward-compatible with RandomForest, XGBoost,
+    LightGBM, CatBoost, Ridge, ElasticNet, etc.
+    """
+
+    if model_buy_signal is None:
+        count_pred_positive = int(return_pct_pred > buy_return_threshold)
+    else:
+        count_pred_positive = int(model_buy_signal)
+
+    raw_pred_positive = int(return_pct_pred > buy_return_threshold)
     actual_positive = int(return_pct_actual > 0)
 
     count_pred_positive_w_actual_positive = int(
         count_pred_positive == 1 and actual_positive == 1
     )
 
+    output_row[f"{horizon}d_raw_pred_positive"] = raw_pred_positive
     output_row[f"{horizon}d_count_pred_positive"] = count_pred_positive
     output_row[f"{horizon}d_count_pred_positive_w_actual_positive"] = (
         count_pred_positive_w_actual_positive
@@ -107,6 +126,8 @@ def add_average_success_metrics(output_row, horizons):
     model_off_profitable_num = 0
     model_off_profitable_den = 0
 
+    raw_pred_positive_num = 0
+
     for horizon in horizons:
         on_den = output_row.get(f"{horizon}d_return_pct_model_on_denominator", 0)
         on_num = output_row.get(f"{horizon}d_return_pct_model_on_numerator", 0.0)
@@ -137,6 +158,10 @@ def add_average_success_metrics(output_row, horizons):
         model_off_profitable_den += output_row.get(
             f"{horizon}d_profitable_model_off_denominator", 0
         )
+
+        raw_pred_positive_num += output_row.get(f"{horizon}d_raw_pred_positive", 0)
+
+    output_row["average_raw_pred_positive_count"] = raw_pred_positive_num
 
     output_row["average_return_pct_model_on_numerator"] = model_on_return_num
     output_row["average_return_pct_model_on_denominator"] = model_on_return_den
@@ -197,6 +222,7 @@ def get_success_metric_columns(horizons):
 
     for horizon in horizons:
         cols += [
+            f"{horizon}d_raw_pred_positive",
             f"{horizon}d_return_pct_model_on_numerator",
             f"{horizon}d_return_pct_model_on_denominator",
             f"{horizon}d_return_pct_model_on",
@@ -219,6 +245,7 @@ def get_success_metric_columns(horizons):
         ]
 
     cols += [
+        "average_raw_pred_positive_count",
         "average_return_pct_model_on_numerator",
         "average_return_pct_model_on_denominator",
         "average_return_pct_model_on",
