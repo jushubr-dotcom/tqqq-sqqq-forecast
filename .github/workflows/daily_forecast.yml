@@ -1,3 +1,4 @@
+```yaml
 name: Daily Forecast Full Backtest
 
 on:
@@ -26,6 +27,16 @@ on:
         options:
           - "true"
           - "false"
+
+      smoke_test_days_per_symbol:
+        description: "Smoke test days per symbol"
+        required: true
+        default: "3"
+
+      smoke_test_parameter_count:
+        description: "Smoke test parameter combinations to run"
+        required: true
+        default: "1"
 
       use_market_regime_filter:
         description: "Use market regime filter? ExtraTrees only for now"
@@ -64,8 +75,8 @@ jobs:
 
     env:
       SMOKE_TEST: ${{ github.event.inputs.smoke_test }}
-      SMOKE_TEST_DAYS_PER_SYMBOL: "3"
-      SMOKE_TEST_PARAMETER_COUNT: "1"
+      SMOKE_TEST_DAYS_PER_SYMBOL: ${{ github.event.inputs.smoke_test_days_per_symbol }}
+      SMOKE_TEST_PARAMETER_COUNT: ${{ github.event.inputs.smoke_test_parameter_count }}
       MIN_POSITIVE_PREDICTIONS: "30"
 
       USE_MARKET_REGIME_FILTER: ${{ github.event.inputs.use_market_regime_filter }}
@@ -165,3 +176,4 @@ jobs:
           fi
 
           git push origin HEAD:main
+```
