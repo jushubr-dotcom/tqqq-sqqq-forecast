@@ -99,6 +99,33 @@ on:
           - "true"
           - "false"
 
+      exclude_features_enabled:
+        description: "Use custom feature exclusions?"
+        required: true
+        default: "false"
+        type: choice
+        options:
+          - "true"
+          - "false"
+
+      exclude_feature_names:
+        description: "Exact feature names to exclude, comma-separated"
+        required: false
+        default: ""
+        type: string
+
+      exclude_feature_prefixes:
+        description: "Feature prefixes to exclude, comma-separated"
+        required: false
+        default: ""
+        type: string
+
+      exclude_feature_test_label:
+        description: "Short label added to backtest_name, e.g. nostreak"
+        required: false
+        default: ""
+        type: string
+
 permissions:
   contents: write
 
@@ -125,6 +152,11 @@ jobs:
       FEATURE_IMPORTANCE_TOP_N: ${{ github.event.inputs.feature_importance_top_n }}
       LOG_LOSS_MODEL_IMPORTANCE: ${{ github.event.inputs.log_loss_model_importance }}
       EXCLUDE_RAW_PRICE_LEVEL_FEATURES: ${{ github.event.inputs.exclude_raw_price_level_features }}
+
+      EXCLUDE_FEATURES_ENABLED: ${{ github.event.inputs.exclude_features_enabled }}
+      EXCLUDE_FEATURE_NAMES: ${{ github.event.inputs.exclude_feature_names }}
+      EXCLUDE_FEATURE_PREFIXES: ${{ github.event.inputs.exclude_feature_prefixes }}
+      EXCLUDE_FEATURE_TEST_LABEL: ${{ github.event.inputs.exclude_feature_test_label }}
 
     steps:
       - name: Checkout repository
