@@ -1141,6 +1141,7 @@ def run_backtest(features, model_params, output_path):
     print(f"\nRunning backtest: {model_params['backtest_name']}", flush=True)
 
     results = []
+    feature_importance_rows = []
 
     features = features.copy()
     features["date"] = pd.to_datetime(features["date"])
