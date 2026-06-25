@@ -6,7 +6,7 @@ on:
       model:
         description: "Model to run"
         required: true
-        default: "xgboost"
+        default: "extratrees"
         type: choice
         options:
           - randomforest
@@ -21,7 +21,7 @@ on:
       smoke_test:
         description: "Run smoke test?"
         required: true
-        default: "false"
+        default: "true"
         type: choice
         options:
           - "true"
@@ -30,13 +30,25 @@ on:
       smoke_test_days_per_symbol:
         description: "Smoke test days per symbol"
         required: true
-        default: "3"
+        default: "30"
         type: string
 
       smoke_test_parameter_count:
         description: "Smoke test parameter combinations to run"
         required: true
         default: "1"
+        type: string
+
+      backtest_duration_months:
+        description: "Backtest duration in months"
+        required: true
+        default: "8"
+        type: string
+
+      backtest_end_date:
+        description: "Backtest end date, YYYY-MM-DD"
+        required: true
+        default: "2026-05-31"
         type: string
 
       use_market_regime_filter:
@@ -91,7 +103,7 @@ on:
           - "false"
 
       exclude_raw_price_level_features:
-        description: "Exclude raw price-level features?"
+        description: "Exclude raw OHLC/price-level features?"
         required: true
         default: "true"
         type: choice
@@ -99,29 +111,48 @@ on:
           - "true"
           - "false"
 
-      exclude_features_enabled:
-        description: "Use custom feature exclusions?"
+      feature_selection_mode:
+        description: "Feature selection mode: all, include, or exclude"
         required: true
-        default: "false"
+        default: "include"
         type: choice
         options:
-          - "true"
-          - "false"
+          - all
+          - include
+          - exclude
+
+      include_feature_names:
+        description: "Exact feature names to include when mode=include, comma-separated"
+        required: false
+        default: "daily_return,return_2d_past,return_3d_past,return_5d_past,ma_ratio_3,ma_ratio_5,rebound_from_low_3,rebound_from_low_5,rebound_from_low_10,drawdown_from_high_3,drawdown_from_high_5,drawdown_from_high_10,other_symbol_return_3d,other_symbol_return_5d,inverse_pressure_3d,inverse_pressure_5d"
+        type: string
+
+      include_feature_prefixes:
+        description: "Feature prefixes to include when mode=include, comma-separated"
+        required: false
+        default: ""
+        type: string
 
       exclude_feature_names:
-        description: "Exact feature names to exclude, comma-separated"
+        description: "Exact feature names to exclude when mode=exclude, comma-separated"
         required: false
         default: ""
         type: string
 
       exclude_feature_prefixes:
-        description: "Feature prefixes to exclude, comma-separated"
+        description: "Feature prefixes to exclude when mode=exclude, comma-separated"
         required: false
         default: ""
         type: string
 
-      exclude_feature_test_label:
-        description: "Short label added to backtest_name, e.g. nostreak"
+      feature_test_label:
+        description: "Feature-set label added to backtest_name, e.g. core_reversal"
+        required: false
+        default: "core_reversal"
+        type: string
+
+      additional_backtest_suffix:
+        description: "Optional extra suffix added to backtest_name, e.g. v2 or no_bad_features"
         required: false
         default: ""
         type: string
@@ -142,6 +173,8 @@ jobs:
       SMOKE_TEST_DAYS_PER_SYMBOL: ${{ github.event.inputs.smoke_test_days_per_symbol }}
       SMOKE_TEST_PARAMETER_COUNT: ${{ github.event.inputs.smoke_test_parameter_count }}
       MIN_POSITIVE_PREDICTIONS: "30"
+      BACKTEST_DURATION_MONTHS: ${{ github.event.inputs.backtest_duration_months }}
+      BACKTEST_END_DATE: ${{ github.event.inputs.backtest_end_date }}
 
       USE_MARKET_REGIME_FILTER: ${{ github.event.inputs.use_market_regime_filter }}
       REGIME_MIN_MA_RATIO_28: ${{ github.event.inputs.regime_min_ma_ratio_28 }}
@@ -153,10 +186,13 @@ jobs:
       LOG_LOSS_MODEL_IMPORTANCE: ${{ github.event.inputs.log_loss_model_importance }}
       EXCLUDE_RAW_PRICE_LEVEL_FEATURES: ${{ github.event.inputs.exclude_raw_price_level_features }}
 
-      EXCLUDE_FEATURES_ENABLED: ${{ github.event.inputs.exclude_features_enabled }}
+      FEATURE_SELECTION_MODE: ${{ github.event.inputs.feature_selection_mode }}
+      INCLUDE_FEATURE_NAMES: ${{ github.event.inputs.include_feature_names }}
+      INCLUDE_FEATURE_PREFIXES: ${{ github.event.inputs.include_feature_prefixes }}
       EXCLUDE_FEATURE_NAMES: ${{ github.event.inputs.exclude_feature_names }}
       EXCLUDE_FEATURE_PREFIXES: ${{ github.event.inputs.exclude_feature_prefixes }}
-      EXCLUDE_FEATURE_TEST_LABEL: ${{ github.event.inputs.exclude_feature_test_label }}
+      FEATURE_TEST_LABEL: ${{ github.event.inputs.feature_test_label }}
+      ADDITIONAL_BACKTEST_SUFFIX: ${{ github.event.inputs.additional_backtest_suffix }}
 
     steps:
       - name: Checkout repository
