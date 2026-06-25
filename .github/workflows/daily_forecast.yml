@@ -31,11 +31,13 @@ on:
         description: "Smoke test days per symbol"
         required: true
         default: "3"
+        type: string
 
       smoke_test_parameter_count:
         description: "Smoke test parameter combinations to run"
         required: true
         default: "1"
+        type: string
 
       use_market_regime_filter:
         description: "Use market regime filter? ExtraTrees only for now"
@@ -50,16 +52,52 @@ on:
         description: "Minimum 28d MA ratio for regime filter"
         required: true
         default: "0.98"
+        type: string
 
       regime_min_return_20d:
         description: "Minimum 20d past return for regime filter"
         required: true
         default: "-0.08"
+        type: string
 
       regime_max_high_low_range:
         description: "Maximum high-low range for regime filter"
         required: true
         default: "0.12"
+        type: string
+
+      log_feature_importance:
+        description: "Log feature importance?"
+        required: true
+        default: "true"
+        type: choice
+        options:
+          - "true"
+          - "false"
+
+      feature_importance_top_n:
+        description: "Number of top features to log per model/date/horizon"
+        required: true
+        default: "50"
+        type: string
+
+      log_loss_model_importance:
+        description: "Log loss-classifier feature importance?"
+        required: true
+        default: "true"
+        type: choice
+        options:
+          - "true"
+          - "false"
+
+      exclude_raw_price_level_features:
+        description: "Exclude raw price-level features?"
+        required: true
+        default: "true"
+        type: choice
+        options:
+          - "true"
+          - "false"
 
 permissions:
   contents: write
@@ -82,6 +120,11 @@ jobs:
       REGIME_MIN_MA_RATIO_28: ${{ github.event.inputs.regime_min_ma_ratio_28 }}
       REGIME_MIN_RETURN_20D: ${{ github.event.inputs.regime_min_return_20d }}
       REGIME_MAX_HIGH_LOW_RANGE: ${{ github.event.inputs.regime_max_high_low_range }}
+
+      LOG_FEATURE_IMPORTANCE: ${{ github.event.inputs.log_feature_importance }}
+      FEATURE_IMPORTANCE_TOP_N: ${{ github.event.inputs.feature_importance_top_n }}
+      LOG_LOSS_MODEL_IMPORTANCE: ${{ github.event.inputs.log_loss_model_importance }}
+      EXCLUDE_RAW_PRICE_LEVEL_FEATURES: ${{ github.event.inputs.exclude_raw_price_level_features }}
 
     steps:
       - name: Checkout repository
