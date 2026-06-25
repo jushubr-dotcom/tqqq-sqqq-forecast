@@ -38,12 +38,23 @@ BACKTEST_END_DATE = "2026-05-31"
 OUTPUT_DIR = "outputs"
 BACKTEST_OUTPUT_PATH = os.path.join(OUTPUT_DIR, "backtest_results.csv")
 PRODUCTION_OUTPUT_PATH = os.path.join(OUTPUT_DIR, "production_forecast.csv")
+FEATURE_IMPORTANCE_OUTPUT_PATH = os.path.join(OUTPUT_DIR, "feature_importance_results.csv")
+FEATURE_IMPORTANCE_SUMMARY_OUTPUT_PATH = os.path.join(OUTPUT_DIR, "feature_importance_summary.csv")
 
 SMOKE_TEST = os.getenv("SMOKE_TEST", "false").lower() == "true"
 SMOKE_TEST_DAYS_PER_SYMBOL = int(os.getenv("SMOKE_TEST_DAYS_PER_SYMBOL", "10"))
 SMOKE_TEST_PARAMETER_COUNT = int(os.getenv("SMOKE_TEST_PARAMETER_COUNT", "2"))
 
 MODEL_NAME = os.getenv("MODEL_NAME", "ExtraTrees")
+
+# ============================================================
+# FEATURE IMPORTANCE / AUDIT CONFIG
+# ============================================================
+# Logs native tree feature importances for every trained return model and loss model.
+# This gives you a standardized audit trail by run, model, backtest, symbol, date, and horizon.
+LOG_FEATURE_IMPORTANCE = os.getenv("LOG_FEATURE_IMPORTANCE", "true").lower() == "true"
+FEATURE_IMPORTANCE_TOP_N = int(os.getenv("FEATURE_IMPORTANCE_TOP_N", "50"))
+LOG_LOSS_MODEL_IMPORTANCE = os.getenv("LOG_LOSS_MODEL_IMPORTANCE", "true").lower() == "true"
 
 # ============================================================
 # FEATURE SET CONFIG
@@ -239,6 +250,228 @@ def safe_divide(numerator, denominator):
     if denominator is None or pd.isna(denominator) or denominator == 0:
         return np.nan
     return numerator / denominator
+
+
+def get_native_importance_array(model):
+    """
+    Returns a native importance array when the model exposes feature_importances_.
+    Works for ExtraTrees, RandomForest, XGBoost sklearn wrapper, LightGBM sklearn wrapper,
+    and CatBoost when wrapped similarly. Returns None if unavailable.
+    """
+
+    if model is None or not hasattr(model, "feature_importances_"):
+        return None
+
+    importances = np.asarray(model.feature_importances_, dtype=float)
+
+    if importances.size == 0:
+        return None
+
+    return importances
+
+
+def build_feature_importance_rows(
+    model,
+    feature_cols,
+    run_timestamp,
+    model_name,
+    backtest_name,
+    symbol,
+    test_start_date,
+    prediction_input_date,
+    horizon,
+    model_component,
+    return_pct_pred=None,
+    return_pct_actual=None,
+    confidence_no_loss=None,
+    loss_probability=None,
+    raw_pred_positive=None,
+    regime_filtered_buy=None,
+    top_n=FEATURE_IMPORTANCE_TOP_N,
+):
+    """
+    Builds standardized native feature-importance rows for one fitted model.
+
+    Each row is one feature for one trained model instance.
+    The output is intentionally long-form so it can be pivoted by model/backtest/horizon/feature.
+    """
+
+    if not LOG_FEATURE_IMPORTANCE:
+        return []
+
+    importances = get_native_importance_array(model)
+
+    if importances is None:
+        return []
+
+    if len(importances) != len(feature_cols):
+        print(
+            f"Feature-importance length mismatch for {backtest_name} | {symbol} | "
+            f"horizon={horizon} | component={model_component}: "
+            f"{len(importances)} importances vs {len(feature_cols)} features.",
+            flush=True,
+        )
+        return []
+
+    total_importance = float(np.nansum(importances))
+    ranked_indices = np.argsort(importances)[::-1]
+
+    if top_n is not None and top_n > 0:
+        ranked_indices = ranked_indices[:top_n]
+
+    rows = []
+
+    for rank, idx in enumerate(ranked_indices, start=1):
+        raw_importance = float(importances[idx])
+        normalized_importance = safe_divide(raw_importance, total_importance)
+
+        rows.append(
+            {
+                "run_timestamp": run_timestamp,
+                "model_name": model_name,
+                "backtest_name": backtest_name,
+                "symbol": symbol,
+                "test_start_date": test_start_date,
+                "prediction_input_date": prediction_input_date,
+                "horizon": horizon,
+                "model_component": model_component,
+                "importance_type": "native_tree_importance",
+                "feature_name": feature_cols[idx],
+                "rank": rank,
+                "raw_importance": raw_importance,
+                "normalized_importance": normalized_importance,
+                "return_pct_pred": return_pct_pred,
+                "return_pct_actual": return_pct_actual,
+                "confidence_no_loss": confidence_no_loss,
+                "loss_probability": loss_probability,
+                "raw_pred_positive": int(raw_pred_positive) if raw_pred_positive is not None else np.nan,
+                "regime_filtered_buy": int(regime_filtered_buy) if regime_filtered_buy is not None else np.nan,
+            }
+        )
+
+    return rows
+
+
+def append_rows_to_csv(rows, output_path):
+    """Appends multiple rows to CSV using the same schema-expansion logic as append_row_to_csv."""
+
+    if not rows:
+        return
+
+    rows_df = pd.DataFrame(rows)
+
+    if rows_df.empty:
+        return
+
+    if not os.path.exists(output_path):
+        rows_df.to_csv(output_path, mode="w", header=True, index=False)
+        return
+
+    existing_df = pd.read_csv(output_path)
+    all_columns = list(existing_df.columns)
+
+    for col in rows_df.columns:
+        if col not in all_columns:
+            all_columns.append(col)
+
+    for col in all_columns:
+        if col not in existing_df.columns:
+            existing_df[col] = np.nan
+        if col not in rows_df.columns:
+            rows_df[col] = np.nan
+
+    combined_df = pd.concat(
+        [existing_df[all_columns], rows_df[all_columns]],
+        ignore_index=True,
+    )
+    combined_df.to_csv(output_path, mode="w", header=True, index=False)
+
+
+def build_feature_importance_summary(importance_rows):
+    """
+    Summarizes feature importance rows for one backtest parameter combination.
+    This is the file to use for quick model-level feature audits.
+    """
+
+    if not importance_rows:
+        return pd.DataFrame()
+
+    df = pd.DataFrame(importance_rows)
+
+    if df.empty:
+        return pd.DataFrame()
+
+    group_cols = [
+        "run_timestamp",
+        "model_name",
+        "backtest_name",
+        "symbol",
+        "horizon",
+        "model_component",
+        "importance_type",
+        "feature_name",
+    ]
+
+    summary = (
+        df.groupby(group_cols, dropna=False)
+        .agg(
+            avg_raw_importance=("raw_importance", "mean"),
+            median_raw_importance=("raw_importance", "median"),
+            max_raw_importance=("raw_importance", "max"),
+            avg_normalized_importance=("normalized_importance", "mean"),
+            median_normalized_importance=("normalized_importance", "median"),
+            max_normalized_importance=("normalized_importance", "max"),
+            avg_rank=("rank", "mean"),
+            best_rank=("rank", "min"),
+            times_ranked=("rank", "count"),
+            times_top_5=("rank", lambda x: int((x <= 5).sum())),
+            times_top_10=("rank", lambda x: int((x <= 10).sum())),
+            avg_return_pct_pred_when_ranked=("return_pct_pred", "mean"),
+            avg_return_pct_actual_when_ranked=("return_pct_actual", "mean"),
+            avg_loss_probability_when_ranked=("loss_probability", "mean"),
+            buy_signal_count_when_ranked=("regime_filtered_buy", "sum"),
+        )
+        .reset_index()
+    )
+
+    summary = summary.sort_values(
+        [
+            "run_timestamp",
+            "model_name",
+            "backtest_name",
+            "symbol",
+            "horizon",
+            "model_component",
+            "avg_normalized_importance",
+        ],
+        ascending=[True, True, True, True, True, True, False],
+    ).reset_index(drop=True)
+
+    return summary
+
+
+def write_feature_importance_outputs(importance_rows):
+    """Writes detailed feature importance rows and a summarized feature audit."""
+
+    if not LOG_FEATURE_IMPORTANCE or not importance_rows:
+        return
+
+    append_rows_to_csv(importance_rows, FEATURE_IMPORTANCE_OUTPUT_PATH)
+
+    summary_df = build_feature_importance_summary(importance_rows)
+
+    if not summary_df.empty:
+        append_rows_to_csv(
+            summary_df.to_dict(orient="records"),
+            FEATURE_IMPORTANCE_SUMMARY_OUTPUT_PATH,
+        )
+
+    print(
+        f"Feature importance rows written: {len(importance_rows):,} | "
+        f"detail={FEATURE_IMPORTANCE_OUTPUT_PATH} | "
+        f"summary={FEATURE_IMPORTANCE_SUMMARY_OUTPUT_PATH}",
+        flush=True,
+    )
 
 
 def get_market_regime_flags(row):
@@ -1119,6 +1352,55 @@ def run_backtest(features, model_params, output_path):
                 ] = count_pred_positive_w_actual_positive
                 output_row[f"{horizon}d_buy_profit_pct"] = buy_profit_pct
 
+                # ------------------------------------------------------------
+                # FEATURE IMPORTANCE AUDIT
+                # ------------------------------------------------------------
+                # Log native importances for the fitted return regressor and,
+                # optionally, the fitted loss classifier. These rows are later
+                # written once per parameter combination to avoid excessive I/O.
+                feature_importance_rows.extend(
+                    build_feature_importance_rows(
+                        model=return_model,
+                        feature_cols=feature_cols,
+                        run_timestamp=RUN_TIMESTAMP,
+                        model_name=MODEL_NAME,
+                        backtest_name=model_params["backtest_name"],
+                        symbol=symbol,
+                        test_start_date=test_date.date(),
+                        prediction_input_date=previous_trading_date.date(),
+                        horizon=horizon,
+                        model_component="return_regressor",
+                        return_pct_pred=return_pct_pred,
+                        return_pct_actual=return_pct_actual,
+                        confidence_no_loss=confidence_no_loss,
+                        loss_probability=loss_probability,
+                        raw_pred_positive=raw_pred_positive,
+                        regime_filtered_buy=model_buy_signal,
+                    )
+                )
+
+                if LOG_LOSS_MODEL_IMPORTANCE and loss_model is not None:
+                    feature_importance_rows.extend(
+                        build_feature_importance_rows(
+                            model=loss_model,
+                            feature_cols=feature_cols,
+                            run_timestamp=RUN_TIMESTAMP,
+                            model_name=MODEL_NAME,
+                            backtest_name=model_params["backtest_name"],
+                            symbol=symbol,
+                            test_start_date=test_date.date(),
+                            prediction_input_date=previous_trading_date.date(),
+                            horizon=horizon,
+                            model_component="loss_classifier",
+                            return_pct_pred=return_pct_pred,
+                            return_pct_actual=return_pct_actual,
+                            confidence_no_loss=confidence_no_loss,
+                            loss_probability=loss_probability,
+                            raw_pred_positive=raw_pred_positive,
+                            regime_filtered_buy=model_buy_signal,
+                        )
+                    )
+
                 return_predictions.append(return_pct_pred)
                 actual_returns.append(return_pct_actual)
                 actual_closes.append(actual_close)
@@ -1193,6 +1475,8 @@ def run_backtest(features, model_params, output_path):
                 f"overall_buy_profit_pct={output_row['overall_buy_profit_pct']}",
                 flush=True,
             )
+
+    write_feature_importance_outputs(feature_importance_rows)
 
     backtest_results = pd.DataFrame(results)
 
