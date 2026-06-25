@@ -907,6 +907,7 @@ def run_backtest(features, model_params, output_path):
                     return_pct_pred=return_pct_pred,
                     return_pct_actual=return_pct_actual,
                     loss_probability=loss_probability,
+                    model_buy_signal=model_buy_signal,
                 )
 
                 buy_profit_pct = safe_divide(
