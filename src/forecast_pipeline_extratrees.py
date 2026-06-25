@@ -46,6 +46,22 @@ SMOKE_TEST_PARAMETER_COUNT = int(os.getenv("SMOKE_TEST_PARAMETER_COUNT", "2"))
 MODEL_NAME = os.getenv("MODEL_NAME", "ExtraTrees")
 
 # ============================================================
+# FEATURE SET CONFIG
+# ============================================================
+# Default true because raw ETF price levels and raw close lags are not stationary.
+# If you want to compare with the old feature set, set:
+#   EXCLUDE_RAW_PRICE_LEVEL_FEATURES=false
+EXCLUDE_RAW_PRICE_LEVEL_FEATURES = (
+    os.getenv("EXCLUDE_RAW_PRICE_LEVEL_FEATURES", "true").lower() == "true"
+)
+
+MA_WINDOWS = [3, 5, 7, 14, 20, 28, 52]
+ROLLING_EXTREME_WINDOWS = [3, 5, 10, 20, 52]
+VOLATILITY_WINDOWS = [3, 5, 10, 20]
+STREAK_WINDOWS = [3, 5, 10]
+OTHER_SYMBOL_RETURN_WINDOWS = [2, 3, 5, 10]
+
+# ============================================================
 # MARKET REGIME FILTER CONFIG
 # ============================================================
 # Easy off switch:
@@ -471,23 +487,161 @@ def create_features(data):
         df = data[data["symbol"] == symbol].copy()
         df = df.sort_values("date").reset_index(drop=True)
 
+        # ------------------------------------------------------------
+        # Basic daily behaviour
+        # ------------------------------------------------------------
         df["daily_return"] = df["close"].pct_change()
         df["open_to_close_return"] = (df["close"] - df["open"]) / df["open"]
         df["high_low_range"] = (df["high"] - df["low"]) / df["close"]
+        df["gap_return"] = (df["open"] / df["close"].shift(1)) - 1
 
+        # Where did the close finish inside the daily candle?
+        # 0 = close at low, 1 = close at high.
+        daily_range = df["high"] - df["low"]
+
+        df["close_location_in_range"] = np.where(
+            daily_range != 0,
+            (df["close"] - df["low"]) / daily_range,
+            np.nan,
+        )
+
+        df["upper_wick_pct"] = np.where(
+            daily_range != 0,
+            (df["high"] - df[["open", "close"]].max(axis=1)) / daily_range,
+            np.nan,
+        )
+
+        df["lower_wick_pct"] = np.where(
+            daily_range != 0,
+            (df[["open", "close"]].min(axis=1) - df["low"]) / daily_range,
+            np.nan,
+        )
+
+        df["gap_filled_intraday"] = np.where(
+            df["gap_return"] > 0,
+            (df["low"] <= df["close"].shift(1)).astype(int),
+            (df["high"] >= df["close"].shift(1)).astype(int),
+        )
+
+        # ------------------------------------------------------------
+        # Lag features
+        # ------------------------------------------------------------
+        # Keep raw close lags for optional backwards compatibility,
+        # but get_feature_columns() excludes them by default because raw price
+        # levels are not stationary.
+        # The ratio version is the preferred feature.
         for lag in LAG_DAYS:
             df[f"close_lag_{lag}"] = df["close"].shift(lag)
+            df[f"close_lag_{lag}_ratio"] = (df["close"] / df["close"].shift(lag)) - 1
             df[f"return_lag_{lag}"] = df["daily_return"].shift(lag)
 
-        for window in [7, 14, 28]:
+        # ------------------------------------------------------------
+        # Moving averages, trend and recovery features
+        # ------------------------------------------------------------
+        for window in MA_WINDOWS:
             df[f"ma_{window}"] = df["close"].rolling(window=window).mean()
             df[f"ma_ratio_{window}"] = df["close"] / df[f"ma_{window}"]
 
-        for window in RETURN_WINDOWS:
+            # Slope of the moving average over the last 3 trading days.
+            df[f"ma_slope_{window}"] = (df[f"ma_{window}"] / df[f"ma_{window}"].shift(3)) - 1
+
+            # Explicit binary trend state.
+            df[f"close_above_ma_{window}"] = (
+                df["close"] > df[f"ma_{window}"]
+            ).astype(int)
+
+        # Existing return windows plus very short-term 2d/3d recovery windows.
+        return_windows = sorted(set(RETURN_WINDOWS + [2, 3]))
+
+        for window in return_windows:
             df[f"return_{window}d_past"] = df["close"].pct_change(window)
 
+        # ------------------------------------------------------------
+        # Drawdown and rebound-from-low features
+        # ------------------------------------------------------------
+        # These are the key additions for the issue you observed:
+        # after a selloff, old lag/trend features can still look bearish,
+        # while rebound_from_low can tell the model that recovery has started.
+        for window in ROLLING_EXTREME_WINDOWS:
+            df[f"rolling_high_{window}"] = df["close"].rolling(window=window).max()
+            df[f"rolling_low_{window}"] = df["close"].rolling(window=window).min()
+
+            df[f"drawdown_from_high_{window}"] = (
+                df["close"] / df[f"rolling_high_{window}"]
+            ) - 1
+
+            df[f"rebound_from_low_{window}"] = (
+                df["close"] / df[f"rolling_low_{window}"]
+            ) - 1
+
+        # ------------------------------------------------------------
+        # Rolling volatility / choppiness
+        # ------------------------------------------------------------
+        for window in VOLATILITY_WINDOWS:
+            df[f"return_volatility_{window}d"] = (
+                df["daily_return"].rolling(window=window).std()
+            )
+
+            df[f"avg_high_low_range_{window}d"] = (
+                df["high_low_range"].rolling(window=window).mean()
+            )
+
+        # ------------------------------------------------------------
+        # Up/down day streaks and rolling counts
+        # ------------------------------------------------------------
+        df["is_up_day"] = (df["daily_return"] > 0).astype(int)
+        df["is_down_day"] = (df["daily_return"] < 0).astype(int)
+
+        for window in STREAK_WINDOWS:
+            df[f"up_days_{window}"] = df["is_up_day"].rolling(window=window).sum()
+            df[f"down_days_{window}"] = df["is_down_day"].rolling(window=window).sum()
+
+        up_groups = (df["is_up_day"] != df["is_up_day"].shift()).cumsum()
+        down_groups = (df["is_down_day"] != df["is_down_day"].shift()).cumsum()
+
+        df["consecutive_up_days"] = df["is_up_day"].groupby(up_groups).cumsum()
+        df["consecutive_down_days"] = df["is_down_day"].groupby(down_groups).cumsum()
+
+        # ------------------------------------------------------------
+        # Volume features
+        # ------------------------------------------------------------
+        # Raw volume is excluded by default later; these normalized features are safer.
+        df["volume_change_1d"] = df["volume"].pct_change()
+
+        for window in [5, 10, 20]:
+            df[f"volume_ma_{window}"] = df["volume"].rolling(window=window).mean()
+            df[f"volume_ratio_{window}"] = df["volume"] / df[f"volume_ma_{window}"]
+
+        # ------------------------------------------------------------
+        # Cross-symbol features
+        # ------------------------------------------------------------
+        # For TQQQ rows, other_symbol is SQQQ.
+        # For SQQQ rows, other_symbol is TQQQ.
+        #
+        # Use returns/spreads rather than raw other_symbol_close because inverse ETF
+        # price levels decay over time and are affected by splits.
         df["other_symbol_return"] = df["other_symbol_close"].pct_change()
 
+        for window in OTHER_SYMBOL_RETURN_WINDOWS:
+            df[f"other_symbol_return_{window}d"] = (
+                df["other_symbol_close"].pct_change(window)
+            )
+
+        df["inverse_pressure_1d"] = -df["other_symbol_return"]
+
+        df["tqqq_vs_inverse_sqqq_return_gap"] = (
+            df["daily_return"] - (-df["other_symbol_return"])
+        )
+
+        for window in [3, 5, 10]:
+            df[f"inverse_pressure_{window}d"] = -df[f"other_symbol_return_{window}d"]
+            df[f"return_vs_inverse_pressure_gap_{window}d"] = (
+                df[f"return_{window}d_past"] - df[f"inverse_pressure_{window}d"]
+            )
+
+        # ------------------------------------------------------------
+        # Targets
+        # ------------------------------------------------------------
         for horizon in HORIZONS:
             df[f"actual_{horizon}d_close"] = df["close"].shift(-horizon)
             df[f"actual_{horizon}d_date"] = df["date"].shift(-horizon)
@@ -501,6 +655,8 @@ def create_features(data):
                 1,
                 0,
             )
+
+        df = df.replace([np.inf, -np.inf], np.nan)
 
         feature_frames.append(df)
 
@@ -531,6 +687,41 @@ def get_feature_columns(df):
         if col not in excluded_cols
         and pd.api.types.is_numeric_dtype(df[col])
     ]
+
+    if EXCLUDE_RAW_PRICE_LEVEL_FEATURES:
+        cleaned_feature_cols = []
+
+        for col in feature_cols:
+            # Exclude raw OHLCV levels. They are not stationary.
+            if col in {"open", "high", "low", "close", "volume", "other_symbol_close"}:
+                continue
+
+            # Exclude raw close lag levels, but keep close_lag_X_ratio.
+            if col.startswith("close_lag_") and not col.endswith("_ratio"):
+                continue
+
+            # Exclude raw moving average / rolling high / rolling low price levels.
+            # Keep ratio/slope/drawdown/rebound versions.
+            if col.startswith("ma_") and not (
+                col.startswith("ma_ratio_") or col.startswith("ma_slope_")
+            ):
+                continue
+
+            if col.startswith("rolling_high_") or col.startswith("rolling_low_"):
+                continue
+
+            if col.startswith("volume_ma_"):
+                continue
+
+            cleaned_feature_cols.append(col)
+
+        feature_cols = cleaned_feature_cols
+
+    print(
+        f"Using {len(feature_cols):,} numeric feature columns. "
+        f"EXCLUDE_RAW_PRICE_LEVEL_FEATURES={EXCLUDE_RAW_PRICE_LEVEL_FEATURES}",
+        flush=True,
+    )
 
     return feature_cols
 
@@ -1258,6 +1449,7 @@ def main():
     print(f"  REGIME_MIN_MA_RATIO_28={REGIME_MIN_MA_RATIO_28}", flush=True)
     print(f"  REGIME_MIN_RETURN_20D={REGIME_MIN_RETURN_20D}", flush=True)
     print(f"  REGIME_MAX_HIGH_LOW_RANGE={REGIME_MAX_HIGH_LOW_RANGE}", flush=True)
+    print(f"  EXCLUDE_RAW_PRICE_LEVEL_FEATURES={EXCLUDE_RAW_PRICE_LEVEL_FEATURES}", flush=True)
 
     raw_data = download_data(SYMBOLS)
     clean = clean_data(raw_data)
