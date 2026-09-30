@@ -1,0 +1,482 @@
+<title>Boring Money Ledger</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..800&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: ledger book. Tier summary strip, a boring-vs-passive map, then the ruled ledger; a side sheet opens each entry. */
+:root {
+  --paper: #edf1ee;
+  --sheet: #f8faf8;
+  --ink: #17231e;
+  --ink-2: #4a5a53;
+  --rule: #cfd8d2;
+  --brass: #8a6508;
+  --brass-soft: #f1e3b8;
+  --top: #1f6f5c;
+  --rising: #a4610f;
+  --radar: #5a55a0;
+  --mine: #8a3b5c;
+  --good: #23704a;
+  --bad: #a3392e;
+  --display: "Archivo", "Arial Narrow", system-ui, sans-serif;
+  --body: "Archivo", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+  --radius: 6px;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --paper: #0f1613; --sheet: #16201b; --ink: #e2eae5; --ink-2: #9fb0a8; --rule: #2a3832;
+  --brass: #e0b34a; --brass-soft: #3a3016; --top: #4fb99b; --rising: #e39a3b; --radar: #a09cf0; --mine: #e07aa3;
+  --good: #5cc48d; --bad: #ef7d70; color-scheme: dark; } }
+:root[data-theme="dark"] {
+  --paper: #0f1613; --sheet: #16201b; --ink: #e2eae5; --ink-2: #9fb0a8; --rule: #2a3832;
+  --brass: #e0b34a; --brass-soft: #3a3016; --top: #4fb99b; --rising: #e39a3b; --radar: #a09cf0; --mine: #e07aa3;
+  --good: #5cc48d; --bad: #ef7d70; color-scheme: dark; }
+
+* { box-sizing: border-box; }
+body { background: var(--paper); color: var(--ink); font-family: var(--body); font-size: 15px; line-height: 1.5; }
+.wrap { max-width: 1180px; margin: 0 auto; padding-inline: 16px; padding-block: 28px 64px; display: grid; gap: 28px; }
+h1, h2, h3 { font-family: var(--display); text-wrap: balance; margin: 0; }
+button, input, select, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 2px solid var(--brass); outline-offset: 2px; }
+.num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.eyebrow { font-family: var(--mono); font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-2); }
+
+/* header */
+header { display: flex; flex-wrap: wrap; gap: 16px 32px; align-items: end; justify-content: space-between; border-bottom: 3px double var(--ink); padding-bottom: 18px; }
+header h1 { font-size: clamp(34px, 6vw, 58px); font-stretch: 68%; font-weight: 800; line-height: .95; letter-spacing: -.01em; text-transform: uppercase; }
+header h1 span { color: var(--brass); }
+header p { margin: 8px 0 0; color: var(--ink-2); max-width: 62ch; }
+.meta { display: flex; flex-direction: column; gap: 10px; align-items: flex-end; }
+.meta .scan { font-family: var(--mono); font-size: 12px; color: var(--ink-2); text-align: right; }
+.btn { border: 1px solid var(--ink); background: var(--ink); color: var(--paper); padding: 8px 14px; border-radius: var(--radius); font-weight: 600; }
+.btn.ghost { background: transparent; color: var(--ink); border-color: var(--rule); }
+.btn.danger { background: transparent; color: var(--bad); border-color: var(--bad); }
+.btn:disabled { opacity: .45; cursor: not-allowed; }
+
+/* tier strip */
+.tiers { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px; }
+.tier { text-align: left; background: var(--sheet); border: 1px solid var(--rule); border-radius: var(--radius); padding: 14px 16px; display: grid; gap: 4px; border-top: 4px solid var(--c); }
+.tier[aria-pressed="true"] { border-color: var(--c); box-shadow: 0 0 0 1px var(--c) inset; }
+.tier .k { display: flex; justify-content: space-between; align-items: baseline; }
+.tier .k b { font-family: var(--display); font-stretch: 75%; font-size: 20px; text-transform: uppercase; color: var(--c); }
+.tier .k .num { font-size: 22px; font-weight: 600; }
+.tier small { color: var(--ink-2); font-size: 13px; }
+.tier .pick { font-size: 13px; }
+.tier .pick strong { font-weight: 600; }
+
+/* map */
+.map-card { background: var(--sheet); border: 1px solid var(--rule); border-radius: var(--radius); padding: 16px; display: grid; gap: 8px; min-width: 0; }
+.map-head { display: flex; flex-wrap: wrap; gap: 8px 20px; justify-content: space-between; align-items: baseline; }
+.map-head h2 { font-size: 20px; font-stretch: 80%; text-transform: uppercase; }
+.legend { display: flex; flex-wrap: wrap; gap: 14px; font-size: 13px; color: var(--ink-2); }
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: var(--c); margin-right: 6px; vertical-align: -1px; }
+.map-scroll { overflow-x: auto; }
+svg.map { width: 100%; min-width: 560px; height: auto; display: block; }
+svg.map text { fill: var(--ink-2); font-family: var(--mono); font-size: 11px; }
+svg.map .grid { stroke: var(--rule); stroke-width: 1; }
+svg.map .quad { fill: var(--brass-soft); }
+svg.map .quad-label { fill: var(--brass); font-family: var(--display); font-stretch: 75%; font-weight: 700; font-size: 13px; letter-spacing: .06em; }
+svg.map circle { stroke: var(--sheet); stroke-width: 1.5; cursor: pointer; fill-opacity: .82; }
+svg.map circle:hover, svg.map circle.sel { fill-opacity: 1; stroke: var(--ink); stroke-width: 2; }
+svg.map .dot-label { fill: var(--ink); font-family: var(--body); font-size: 11px; pointer-events: none; }
+
+/* controls */
+.controls { display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: center; justify-content: space-between; }
+.tabs { display: flex; flex-wrap: wrap; gap: 6px; }
+.tab { border: 1px solid var(--rule); background: transparent; border-radius: 999px; padding: 5px 12px; font-size: 13px; }
+.tab[aria-selected="true"] { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+.tab .num { font-size: 11px; opacity: .75; margin-left: 4px; }
+.filters { display: flex; flex-wrap: wrap; gap: 8px; }
+.filters input, .filters select { border: 1px solid var(--rule); background: var(--sheet); border-radius: var(--radius); padding: 6px 10px; font-size: 14px; }
+.filters input { width: 200px; max-width: 100%; }
+
+/* ledger table */
+.ledger { background: var(--sheet); border: 1px solid var(--rule); border-radius: var(--radius); overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; min-width: 860px; }
+thead th { font-family: var(--mono); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-2); font-weight: 400; text-align: left; padding: 10px 10px; border-bottom: 2px solid var(--ink); white-space: nowrap; }
+thead th.r, td.r { text-align: right; }
+tbody tr { border-bottom: 1px solid var(--rule); cursor: pointer; }
+tbody tr:hover { background: color-mix(in srgb, var(--brass-soft) 45%, transparent); }
+tbody tr.sel { background: var(--brass-soft); }
+td { padding: 9px 10px; vertical-align: middle; font-size: 14px; }
+td.name { font-weight: 600; }
+td.name .sub { display: block; font-weight: 400; font-size: 12px; color: var(--ink-2); }
+.chip { display: inline-block; font-family: var(--mono); font-size: 10.5px; letter-spacing: .06em; text-transform: uppercase; padding: 2px 7px; border-radius: 999px; border: 1px solid var(--c); color: var(--c); white-space: nowrap; }
+.thin { font-family: var(--mono); font-size: 10px; color: var(--ink-2); border: 1px dashed var(--rule); border-radius: 4px; padding: 0 4px; margin-left: 6px; font-weight: 400; }
+.bar { display: flex; align-items: center; gap: 8px; min-width: 110px; }
+.bar .track { flex: 1; height: 6px; background: var(--rule); border-radius: 3px; overflow: hidden; }
+.bar .fill { height: 100%; background: var(--c); }
+.bar .num { font-size: 12px; width: 26px; text-align: right; }
+.opp { font-family: var(--mono); font-weight: 600; font-size: 15px; }
+.star { background: none; border: 0; font-size: 18px; line-height: 1; color: var(--rule); padding: 2px; }
+.star.on { color: var(--brass); }
+.status { font-size: 12px; font-family: var(--mono); color: var(--ink-2); white-space: nowrap; }
+.status.set { color: var(--ink); font-weight: 600; }
+.empty { padding: 40px 20px; text-align: center; color: var(--ink-2); }
+.notice { background: var(--brass-soft); border: 1px solid var(--brass); color: var(--ink); padding: 10px 14px; border-radius: var(--radius); font-size: 14px; }
+
+/* detail sheet */
+.scrim { position: fixed; inset: 0; background: rgba(10, 16, 13, .38); z-index: 20; }
+.sheet { position: fixed; top: 0; right: 0; bottom: 0; width: min(480px, 100%); background: var(--sheet); border-left: 1px solid var(--rule); z-index: 21; overflow-y: auto;
+  padding: calc(env(safe-area-inset-top, 0px) + 20px) 20px calc(env(safe-area-inset-bottom, 0px) + 28px); display: grid; gap: 18px; align-content: start; }
+.sheet-head { display: flex; justify-content: space-between; gap: 12px; align-items: start; }
+.sheet h2 { font-size: 28px; font-stretch: 72%; text-transform: uppercase; line-height: 1; }
+.close { background: none; border: 1px solid var(--rule); border-radius: var(--radius); width: 34px; height: 34px; font-size: 18px; flex: none; }
+.stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; background: var(--rule); border: 1px solid var(--rule); border-radius: var(--radius); overflow: hidden; }
+.stats div { background: var(--sheet); padding: 10px; display: grid; gap: 2px; }
+.stats b { font-family: var(--mono); font-size: 18px; font-weight: 600; }
+.stats span { font-size: 11px; color: var(--ink-2); font-family: var(--mono); text-transform: uppercase; letter-spacing: .06em; }
+.section { display: grid; gap: 8px; }
+.section h3 { font-size: 13px; font-family: var(--mono); font-weight: 400; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-2); }
+.row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.seg { display: flex; flex-wrap: wrap; gap: 4px; }
+.seg button { border: 1px solid var(--rule); background: transparent; border-radius: var(--radius); padding: 4px 10px; font-size: 13px; }
+.seg button[aria-pressed="true"] { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+.vids { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.vids a { color: var(--ink); text-decoration-color: var(--rule); text-underline-offset: 3px; }
+.vids a:hover { text-decoration-color: var(--brass); }
+.vids small { display: block; color: var(--ink-2); font-family: var(--mono); font-size: 11px; }
+.notes { list-style: none; margin: 0; padding: 0; display: grid; gap: 0; border-left: 2px solid var(--rule); }
+.notes li { padding: 6px 0 6px 12px; display: grid; gap: 2px; }
+.notes time { font-family: var(--mono); font-size: 11px; color: var(--ink-2); }
+.notes .nt { white-space: pre-wrap; overflow-wrap: anywhere; }
+.notes .rm { justify-self: start; background: none; border: 0; color: var(--ink-2); font-size: 12px; padding: 0; text-decoration: underline; }
+textarea, .field input, .field select { width: 100%; border: 1px solid var(--rule); background: var(--paper); border-radius: var(--radius); padding: 8px 10px; }
+textarea { min-height: 70px; resize: vertical; }
+.field { display: grid; gap: 4px; }
+.field label { font-size: 13px; color: var(--ink-2); }
+.two { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.hist { font-family: var(--mono); font-size: 12px; color: var(--ink-2); display: grid; gap: 2px; }
+.confirm { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: 13px; }
+.toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(env(safe-area-inset-bottom, 0px) + 20px); background: var(--ink); color: var(--paper); padding: 8px 14px; border-radius: var(--radius); font-size: 14px; z-index: 30; }
+footer { color: var(--ink-2); font-size: 13px; border-top: 1px solid var(--rule); padding-top: 14px; display: grid; gap: 6px; max-width: 80ch; }
+@media (max-width: 640px) {
+  .meta { align-items: flex-start; } .meta .scan { text-align: left; }
+  .stats { grid-template-columns: repeat(2, 1fr); }
+}
+@media (prefers-reduced-motion: no-preference) { .sheet { animation: slide .18s ease-out; } @keyframes slide { from { transform: translateX(24px); opacity: .6; } } }
+</style>
+
+<div class="wrap">
+  <header>
+    <div>
+      <div class="eyebrow">Side hustle ledger · sourced from YouTube</div>
+      <h1>Boring <span>Money</span> Ledger</h1>
+      <p>Unglamorous, low-effort side hustles ranked from YouTube coverage. <em>Top</em> ones are already widely pitched; <em>Rising</em> and <em>Under the radar</em> ones have little coverage yet. Track your own status and notes on each.</p>
+    </div>
+    <div class="meta">
+      <div class="scan" id="scanInfo">Loading ledger…</div>
+      <button class="btn" id="addBtn" type="button" disabled>+ Add a hustle</button>
+    </div>
+  </header>
+
+  <div id="notice" class="notice" hidden></div>
+
+  <section class="tiers" id="tiers" aria-label="Tiers"></section>
+
+  <section class="map-card" aria-label="Boring versus passive map">
+    <div class="map-head">
+      <h2>Where each hustle sits</h2>
+      <div class="legend">
+        <span style="--c:var(--top)"><i></i>Top</span>
+        <span style="--c:var(--rising)"><i></i>Rising</span>
+        <span style="--c:var(--radar)"><i></i>Under the radar</span>
+        <span style="--c:var(--mine)"><i></i>Added by you</span>
+        <span>Dot size = YouTube views</span>
+      </div>
+    </div>
+    <div class="map-scroll"><svg class="map" id="map" viewBox="0 0 900 420" role="img" aria-label="Scatter of unattractive score against passive score"></svg></div>
+  </section>
+
+  <section style="display:grid;gap:12px;min-width:0">
+    <div class="controls">
+      <div class="tabs" role="tablist" id="tabs"></div>
+      <div class="filters">
+        <input id="q" type="search" placeholder="Search hustles" aria-label="Search hustles">
+        <select id="sort" aria-label="Sort by">
+          <option value="opportunity">Sort: Opportunity</option>
+          <option value="combo">Sort: Boring + passive</option>
+          <option value="passive">Sort: Most passive</option>
+          <option value="unattractive">Sort: Least attractive</option>
+          <option value="videos">Sort: Most videos</option>
+          <option value="views">Sort: Most views</option>
+          <option value="fewest">Sort: Least coverage</option>
+          <option value="updated">Sort: Recently updated by you</option>
+        </select>
+      </div>
+    </div>
+    <div class="ledger">
+      <table>
+        <thead><tr>
+          <th aria-label="Starred"></th><th>Hustle</th><th>Tier</th><th>Unattractive</th><th>Passive</th>
+          <th class="r" title="Boring × passive, discounted for crowded niches">Opportunity</th><th class="r">Videos</th><th class="r">Views</th><th class="r" title="Share of mentions in videos under a year old">Recent</th><th>My status</th>
+        </tr></thead>
+        <tbody id="rows"><tr><td colspan="10" class="empty">The ledger loads from this page's database. Hustles from the YouTube scan appear here, plus any you add with “+ Add a hustle”.</td></tr></tbody>
+      </table>
+    </div>
+  </section>
+
+  <footer>
+    <div><strong>How scores work.</strong> <em>Unattractive</em> = share of YouTube videos mentioning the hustle that call it boring, dirty or unsexy. <em>Passive</em> = share describing it as hands-off or automated, minus a penalty for effort words (labor, customers, daily). <em>Opportunity</em> = √(unattractive × passive), discounted as total views grow, so less-covered hustles can rank high. Hustles marked <span class="thin">thin</span> have fewer than 3 videos, so treat their scores as early signals.</div>
+    <div>Scores reflect how YouTube pitches a hustle, not audited income. Rerun <code>side_hustles/scrape_youtube.py</code> and <code>analyze.py</code>, then ask Claude to refresh this ledger. Your status, stars and notes are kept.</div>
+  </footer>
+</div>
+
+<div id="sheetRoot"></div>
+<div id="toast" class="toast" role="status" hidden></div>
+
+<script>
+const TIERS = [
+  { key: "Top", c: "var(--top)", blurb: "Widely pitched: 15+ videos or 5M+ views" },
+  { key: "Rising", c: "var(--rising)", blurb: "Little coverage, mostly from the past year" },
+  { key: "Under the radar", c: "var(--radar)", blurb: "Little coverage, mostly older videos" },
+];
+const STATUSES = ["", "Watching", "Researching", "Testing", "Running", "Dropped"];
+const tierColor = t => (TIERS.find(x => x.key === t) || { c: "var(--mine)" }).c;
+const state = { docs: new Map(), scan: null, tab: "All", tierFilter: null, q: "", sort: "opportunity", sel: null, canWrite: false, db: null, confirmDelete: false };
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const fmtViews = n => !n ? "—" : n >= 1e6 ? (n / 1e6).toFixed(1) + "M" : n >= 1e3 ? Math.round(n / 1e3) + "K" : String(n);
+const today = () => new Date().toISOString().slice(0, 10);
+const slug = s => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 80) || "hustle";
+
+function toast(msg) { const t = $("toast"); t.textContent = msg; t.hidden = false; clearTimeout(toast.h); toast.h = setTimeout(() => t.hidden = true, 2200); }
+function showNotice(msg) { const n = $("notice"); n.textContent = msg; n.hidden = !msg; }
+
+function list() { return [...state.docs.values()]; }
+function tierOf(d) { return d.source === "manual" ? "Mine" : d.tier; }
+
+function filtered() {
+  let xs = list();
+  const t = state.tab;
+  if (t === "Pipeline") xs = xs.filter(d => d.status && d.status !== "Dropped");
+  else if (t === "Starred") xs = xs.filter(d => d.star);
+  else if (t === "Mine") xs = xs.filter(d => d.source === "manual");
+  else if (t !== "All") xs = xs.filter(d => d.tier === t);
+  if (state.q) { const q = state.q.toLowerCase(); xs = xs.filter(d => d.name.toLowerCase().includes(q)); }
+  const k = state.sort;
+  const val = d => k === "fewest" ? -(d.videos || 0) : k === "updated" ? (d.updatedAt || "") : (d[k] ?? -1);
+  xs.sort((a, b) => { const va = val(a), vb = val(b); return va < vb ? 1 : va > vb ? -1 : a.name.localeCompare(b.name); });
+  return xs;
+}
+
+function renderHeader() {
+  const s = state.scan;
+  $("scanInfo").innerHTML = s
+    ? `Last YouTube scan <b>${esc(s.date)}</b><br>${s.videos} videos · ${s.queries} searches · ${fmtViews(s.views)} views`
+    : (state.docs.size ? "Scan details unavailable" : $("scanInfo").textContent);
+  $("addBtn").disabled = !state.canWrite;
+}
+
+function renderTiers() {
+  const xs = list();
+  $("tiers").innerHTML = TIERS.map(t => {
+    const ms = xs.filter(d => d.tier === t.key && d.source !== "manual").sort((a, b) => b.opportunity - a.opportunity);
+    const best = ms.find(d => d.videos >= 3) || ms[0];
+    return `<button type="button" class="tier" style="--c:${t.c}" data-tier="${esc(t.key)}" aria-pressed="${state.tab === t.key}">
+      <span class="k"><b>${esc(t.key)}</b><span class="num">${ms.length}</span></span>
+      <small>${esc(t.blurb)}</small>
+      <span class="pick">${best ? `Best bet: <strong>${esc(best.name)}</strong>` : "&nbsp;"}</span></button>`;
+  }).join("") + (() => {
+    const p = xs.filter(d => d.status && d.status !== "Dropped");
+    return `<button type="button" class="tier" style="--c:var(--brass)" data-tier="Pipeline" aria-pressed="${state.tab === "Pipeline"}">
+      <span class="k"><b>My pipeline</b><span class="num">${p.length}</span></span>
+      <small>Hustles you are watching, researching, testing or running</small>
+      <span class="pick">${p.length ? p.slice(0, 3).map(d => esc(d.name)).join(" · ") : "Open any hustle and set a status"}</span></button>`;
+  })();
+}
+
+function renderTabs() {
+  const xs = list();
+  const tabs = [["All", xs.length], ["Top", xs.filter(d => d.tier === "Top").length], ["Rising", xs.filter(d => d.tier === "Rising").length],
+    ["Under the radar", xs.filter(d => d.tier === "Under the radar").length], ["Pipeline", xs.filter(d => d.status && d.status !== "Dropped").length],
+    ["Starred", xs.filter(d => d.star).length], ["Mine", xs.filter(d => d.source === "manual").length]];
+  $("tabs").innerHTML = tabs.map(([k, n]) => `<button type="button" class="tab" role="tab" data-tab="${esc(k)}" aria-selected="${state.tab === k}">${k === "Pipeline" ? "My pipeline" : k === "Mine" ? "Added by me" : esc(k)}<span class="num">${n}</span></button>`).join("");
+}
+
+function bar(v, c) { v = Math.max(0, Math.min(100, v || 0)); return `<div class="bar" style="--c:${c}"><div class="track"><div class="fill" style="width:${v}%"></div></div><span class="num">${Math.round(v)}</span></div>`; }
+
+function renderRows() {
+  const xs = filtered();
+  const tb = $("rows");
+  if (!state.docs.size) return;
+  if (!xs.length) { tb.innerHTML = `<tr><td colspan="10" class="empty">${state.tab === "Pipeline" ? "Nothing in your pipeline yet. Open a hustle and set a status such as Watching or Researching." : state.tab === "Starred" ? "No starred hustles yet. Tap ☆ on any row." : state.tab === "Mine" ? "You haven’t added any hustles. Use “+ Add a hustle”." : "No hustles match."}</td></tr>`; return; }
+  tb.innerHTML = xs.map(d => {
+    const tier = tierOf(d);
+    const notes = (d.notes || []).length;
+    return `<tr data-id="${esc(d.id)}" class="${state.sel === d.id ? "sel" : ""}">
+      <td><button type="button" class="star ${d.star ? "on" : ""}" data-star="${esc(d.id)}" aria-label="${d.star ? "Unstar" : "Star"} ${esc(d.name)}" ${state.canWrite ? "" : "disabled"}>${d.star ? "★" : "☆"}</button></td>
+      <td class="name">${esc(d.name)}${d.source !== "manual" && d.videos < 3 ? '<span class="thin">thin</span>' : ""}<span class="sub">${d.chapters ? d.chapters + " chapter mentions" : d.source === "manual" ? "Added by you" : "No chapter mentions"}${notes ? ` · ${notes} note${notes > 1 ? "s" : ""}` : ""}</span></td>
+      <td><span class="chip" style="--c:${tierColor(tier)}">${esc(tier === "Mine" ? "Added by you" : tier)}</span></td>
+      <td>${bar(d.unattractive, "var(--rising)")}</td>
+      <td>${bar(d.passive, "var(--top)")}</td>
+      <td class="r opp">${d.opportunity != null ? Math.round(d.opportunity) : "—"}</td>
+      <td class="r num">${d.videos ?? "—"}</td>
+      <td class="r num">${fmtViews(d.views)}</td>
+      <td class="r num">${d.recent != null ? d.recent + "%" : "—"}</td>
+      <td><span class="status ${d.status ? "set" : ""}">${esc(d.status || "—")}${d.rating ? " · " + "●".repeat(d.rating) : ""}</span></td></tr>`;
+  }).join("");
+}
+
+function renderMap() {
+  const W = 900, H = 420, L = 48, R = 20, T = 20, B = 44;
+  const x = v => L + (Math.max(0, Math.min(100, v)) / 100) * (W - L - R);
+  const y = v => T + (1 - Math.max(0, Math.min(100, v)) / 100) * (H - T - B);
+  const vis = new Set(filtered().map(d => d.id));
+  let g = `<rect class="quad" x="${x(50)}" y="${y(100)}" width="${x(100) - x(50)}" height="${y(50) - y(100)}"/>
+    <text class="quad-label" x="${x(100) - 8}" y="${y(100) + 18}" text-anchor="end">BORING &amp; PASSIVE</text>`;
+  for (let v = 0; v <= 100; v += 25) {
+    g += `<line class="grid" x1="${x(v)}" x2="${x(v)}" y1="${y(0)}" y2="${y(100)}"/><line class="grid" x1="${x(0)}" x2="${x(100)}" y1="${y(v)}" y2="${y(v)}"/>`;
+    g += `<text x="${x(v)}" y="${H - B + 16}" text-anchor="middle">${v}</text><text x="${L - 8}" y="${y(v) + 4}" text-anchor="end">${v}</text>`;
+  }
+  g += `<text x="${(L + W - R) / 2}" y="${H - 6}" text-anchor="middle">Unattractive →</text>`;
+  g += `<text transform="translate(12 ${(T + H - B) / 2}) rotate(-90)" text-anchor="middle">Passive →</text>`;
+  const pts = list().filter(d => vis.has(d.id) && d.unattractive != null && d.passive != null)
+    .map(d => ({ d, r: 4 + Math.sqrt(Math.max(0, Math.log10(1 + (d.views || 0)) - 3)) * 3.2 }))
+    .sort((a, b) => b.r - a.r);
+  for (const { d, r } of pts) {
+    g += `<circle data-id="${esc(d.id)}" class="${state.sel === d.id ? "sel" : ""}" cx="${x(d.unattractive).toFixed(1)}" cy="${y(d.passive).toFixed(1)}" r="${r.toFixed(1)}" fill="${tierColor(tierOf(d))}"><title>${esc(d.name)}: unattractive ${Math.round(d.unattractive)}, passive ${Math.round(d.passive)}, ${fmtViews(d.views)} views</title></circle>`;
+  }
+  const labelled = pts.filter(p => p.d.opportunity >= 45 || p.d.star || state.sel === p.d.id).slice(0, 14);
+  for (const { d, r } of labelled) {
+    const cx = x(d.unattractive), right = cx < W - 170;
+    g += `<text class="dot-label" x="${(right ? cx + r + 4 : cx - r - 4).toFixed(1)}" y="${(y(d.passive) + 4).toFixed(1)}" text-anchor="${right ? "start" : "end"}">${esc(d.name)}</text>`;
+  }
+  $("map").innerHTML = g;
+}
+
+function renderSheet() {
+  const root = $("sheetRoot");
+  const d = state.sel === "__new" ? null : state.docs.get(state.sel);
+  if (!state.sel || (state.sel !== "__new" && !d)) { root.innerHTML = ""; return; }
+  const dis = state.canWrite ? "" : "disabled";
+  if (state.sel === "__new") {
+    if ($("addForm")) return; // keep what the viewer is typing
+    root.innerHTML = `<div class="scrim" data-close></div><aside class="sheet" role="dialog" aria-modal="true" aria-labelledby="sh">
+      <div class="sheet-head"><h2 id="sh">Add a hustle</h2><button class="close" type="button" data-close aria-label="Close">×</button></div>
+      <form id="addForm" class="section">
+        <div class="field"><label for="nName">Name</label><input id="nName" required maxlength="80" placeholder="e.g. Ice vending machines"></div>
+        <div class="two">
+          <div class="field"><label for="nUgly">How unattractive (0–100)</label><input id="nUgly" type="number" min="0" max="100" placeholder="70"></div>
+          <div class="field"><label for="nPass">How passive (0–100)</label><input id="nPass" type="number" min="0" max="100" placeholder="50"></div>
+        </div>
+        <div class="field"><label for="nWhere">Where you found it</label><input id="nWhere" maxlength="300" placeholder="Video link, subreddit, a friend…"></div>
+        <div class="field"><label for="nNote">First note</label><textarea id="nNote" maxlength="2000" placeholder="Startup cost, what it takes, why it caught your eye"></textarea></div>
+        <div class="row"><button class="btn" type="submit">Add to ledger</button><button class="btn ghost" type="button" data-close>Cancel</button></div>
+      </form></aside>`;
+    setTimeout(() => $("nName")?.focus(), 0);
+    return;
+  }
+  const draft = $("noteText")?.value || "";
+  const scroll = root.querySelector(".sheet")?.scrollTop || 0;
+  const tier = tierOf(d);
+  const notes = [...(d.notes || [])].sort((a, b) => (b.at || "").localeCompare(a.at || ""));
+  const hist = d.history || [];
+  root.innerHTML = `<div class="scrim" data-close></div><aside class="sheet" role="dialog" aria-modal="true" aria-labelledby="sh">
+    <div class="sheet-head"><div style="display:grid;gap:6px"><span class="chip" style="--c:${tierColor(tier)};justify-self:start">${esc(tier === "Mine" ? "Added by you" : tier)}</span><h2 id="sh">${esc(d.name)}</h2></div>
+      <button class="close" type="button" data-close aria-label="Close">×</button></div>
+    <div class="stats">
+      <div><span>Opportunity</span><b>${d.opportunity != null ? Math.round(d.opportunity) : "—"}</b></div>
+      <div><span>Unattractive</span><b>${d.unattractive != null ? Math.round(d.unattractive) : "—"}</b></div>
+      <div><span>Passive</span><b>${d.passive != null ? Math.round(d.passive) : "—"}</b></div>
+      <div><span>Videos</span><b>${d.videos ?? "—"}</b></div>
+      <div><span>Views</span><b>${fmtViews(d.views)}</b></div>
+      <div><span>Recent</span><b>${d.recent != null ? d.recent + "%" : "—"}</b></div>
+    </div>
+    ${d.source !== "manual" && d.videos < 3 ? `<div class="notice">Only ${d.videos} video${d.videos > 1 ? "s" : ""} mention this, so the scores are an early signal.</div>` : ""}
+    <div class="section"><h3>My status</h3>
+      <div class="seg" id="statusSeg">${STATUSES.map(s => `<button type="button" data-status="${esc(s)}" aria-pressed="${(d.status || "") === s}" ${dis}>${s || "None"}</button>`).join("")}</div></div>
+    <div class="section"><h3>My rating</h3>
+      <div class="seg" id="rateSeg">${[0, 1, 2, 3, 4, 5].map(n => `<button type="button" data-rate="${n}" aria-pressed="${(d.rating || 0) === n}" ${dis}>${n ? "●".repeat(n) : "Unrated"}</button>`).join("")}</div></div>
+    <div class="section"><h3>Notes ledger</h3>
+      <form id="noteForm" class="section"><textarea id="noteText" maxlength="2000" placeholder="Log a finding: a cost quote, a supplier, a local competitor, a result…" ${dis}></textarea>
+        <div class="row"><button class="btn" type="submit" ${dis}>Add note</button></div></form>
+      ${notes.length ? `<ul class="notes">${notes.map(n => `<li><time>${esc(n.at)}</time><span class="nt">${esc(n.text)}</span>${state.canWrite ? `<button type="button" class="rm" data-rmnote="${esc(n.id)}">Remove</button>` : ""}</li>`).join("")}</ul>` : `<p style="margin:0;color:var(--ink-2);font-size:14px">No notes yet.</p>`}
+    </div>
+    ${(d.topVideos || []).length ? `<div class="section"><h3>Most-watched videos mentioning it</h3><ul class="vids">${d.topVideos.map(v => `<li><a href="${esc(v.url)}" target="_blank" rel="noopener">${esc(v.title)}</a><small>${fmtViews(v.views)} views</small></li>`).join("")}</ul></div>` : ""}
+    ${d.foundAt ? `<div class="section"><h3>Where I found it</h3><p style="margin:0;overflow-wrap:anywhere">${/^https?:\/\//.test(d.foundAt) ? `<a href="${esc(d.foundAt)}" target="_blank" rel="noopener">${esc(d.foundAt)}</a>` : esc(d.foundAt)}</p></div>` : ""}
+    ${hist.length ? `<div class="section"><h3>Scan history</h3><div class="hist">${hist.map((h, i) => { const p = hist[i - 1]; const dv = p ? h.videos - p.videos : null; return `<span>${esc(h.date)} · ${h.videos} videos · ${fmtViews(h.views)} views${dv != null ? ` · <b style="color:${dv > 0 ? "var(--good)" : dv < 0 ? "var(--bad)" : "inherit"}">${dv > 0 ? "+" : ""}${dv}</b>` : ""}</span>`; }).join("")}</div></div>` : ""}
+    ${d.source === "manual" && state.canWrite ? `<div class="section"><h3>Remove</h3>${state.confirmDelete
+      ? `<div class="confirm">Delete “${esc(d.name)}” and its notes? <button class="btn danger" type="button" id="delYes">Delete</button><button class="btn ghost" type="button" id="delNo">Keep</button></div>`
+      : `<div><button class="btn ghost" type="button" id="delAsk">Delete this hustle</button></div>`}</div>` : ""}
+  </aside>`;
+  if ($("noteText")) $("noteText").value = draft;
+  root.querySelector(".sheet").scrollTop = scroll;
+}
+
+function render() { renderHeader(); renderTiers(); renderTabs(); renderRows(); renderMap(); renderSheet(); }
+
+async function write(id, patch, okMsg) {
+  if (!state.db || !state.canWrite) return;
+  try { await state.db.doc("hustles/" + id).update({ ...patch, updatedAt: new Date().toISOString() }); if (okMsg) toast(okMsg); }
+  catch (e) {
+    if (e && e.code === "invalid_argument") { state.canWrite = false; render(); showNotice("You can view this ledger but not edit it."); }
+    else toast("Couldn’t save. Check your connection and try again.");
+  }
+}
+
+function open(id) { state.sel = id; state.confirmDelete = false; renderRows(); renderMap(); renderSheet(); }
+function close() { state.sel = null; renderRows(); renderMap(); renderSheet(); }
+
+document.addEventListener("click", e => {
+  const t = e.target.closest("[data-star],[data-id],[data-tab],[data-tier],[data-close],[data-status],[data-rate],[data-rmnote],#addBtn,#delAsk,#delYes,#delNo");
+  if (!t) return;
+  if (t.dataset.star) { e.stopPropagation(); const d = state.docs.get(t.dataset.star); write(d.id, { star: !d.star }); return; }
+  if (t.id === "addBtn") { open("__new"); return; }
+  if (t.dataset.close !== undefined) { close(); return; }
+  if (t.dataset.tab) { state.tab = t.dataset.tab; render(); return; }
+  if (t.dataset.tier) { state.tab = state.tab === t.dataset.tier ? "All" : t.dataset.tier; render(); return; }
+  const d = state.docs.get(state.sel);
+  if (t.dataset.status !== undefined && d) { write(d.id, { status: t.dataset.status }, t.dataset.status ? "Status: " + t.dataset.status : "Status cleared"); return; }
+  if (t.dataset.rate !== undefined && d) { write(d.id, { rating: +t.dataset.rate }); return; }
+  if (t.dataset.rmnote && d) { write(d.id, { notes: (d.notes || []).filter(n => n.id !== t.dataset.rmnote) }, "Note removed"); return; }
+  if (t.id === "delAsk") { state.confirmDelete = true; renderSheet(); return; }
+  if (t.id === "delNo") { state.confirmDelete = false; renderSheet(); return; }
+  if (t.id === "delYes" && d) { const id = d.id; state.sel = null; state.db.doc("hustles/" + id).delete().then(() => toast("Deleted"), () => toast("Couldn’t delete. Try again.")); return; }
+  if (t.dataset.id) open(t.dataset.id);
+});
+document.addEventListener("keydown", e => { if (e.key === "Escape" && state.sel) close(); });
+document.addEventListener("submit", async e => {
+  e.preventDefault();
+  if (e.target.id === "noteForm") {
+    const d = state.docs.get(state.sel), ta = $("noteText"), text = ta.value.trim();
+    if (!d || !text) return;
+    ta.value = "";
+    await write(d.id, { notes: [...(d.notes || []), { id: Date.now().toString(36), at: today(), text }] }, "Note added");
+  }
+  if (e.target.id === "addForm") {
+    const name = $("nName").value.trim(); if (!name || !state.db) return;
+    let id = "my-" + slug(name); if (state.docs.has(id)) id += "-" + Date.now().toString(36);
+    const num = el => el.value === "" ? null : Math.max(0, Math.min(100, +el.value));
+    const u = num($("nUgly")), p = num($("nPass"));
+    const note = $("nNote").value.trim();
+    const doc = { name, source: "manual", tier: "Mine", unattractive: u, passive: p,
+      opportunity: u != null && p != null ? Math.round(Math.sqrt(u * p) * 10) / 10 : null,
+      foundAt: $("nWhere").value.trim(), status: "Watching", star: false, rating: 0,
+      notes: note ? [{ id: Date.now().toString(36), at: today(), text: note }] : [],
+      createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
+    try { await state.db.doc("hustles/" + id).set(doc); toast("Added " + name); open(id); }
+    catch (err) { toast(err && err.code === "quota_exceeded" ? "The ledger is full. Delete some hustles first." : "Couldn’t add it. Try again."); }
+  }
+});
+$("q").addEventListener("input", e => { state.q = e.target.value.trim(); renderRows(); renderMap(); });
+$("sort").addEventListener("change", e => { state.sort = e.target.value; renderRows(); });
+
+(async () => {
+  const db = await window.claude?.use?.("db");
+  if (!db) { $("scanInfo").textContent = "Ledger unavailable"; showNotice("This ledger needs its database. Open it on claude.ai while signed in."); return; }
+  state.db = db;
+  const user = await window.claude.use("user");
+  const can = user ? await user.can("data.write") : null;
+  state.canWrite = can !== false;
+  if (can === false) showNotice("You can view this ledger but not edit it.");
+  db.collection("hustles").onSnapshot(snap => {
+    state.docs = new Map(snap.docs.map(s => [s.id, { id: s.id, ...s.data() }]));
+    if (state.sel && state.sel !== "__new" && !state.docs.has(state.sel)) state.sel = null;
+    if (!state.docs.size) $("rows").innerHTML = `<tr><td colspan="10" class="empty">No hustles in the ledger yet. Add one with “+ Add a hustle”.</td></tr>`;
+    render();
+  }, () => showNotice("Lost connection to the ledger. Reload the page."));
+  db.collection("scans").orderBy("date", "desc").limit(1).onSnapshot(snap => { state.scan = snap.docs[0]?.data() || null; renderHeader(); }, () => {});
+})();
+</script>

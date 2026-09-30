@@ -111,11 +111,26 @@ UGLY_RE, PASSIVE_RE, EFFORT_RE = (re.compile(p, re.I) for p in (UGLY, PASSIVE, E
 CHAPTER_RE = re.compile(r"^\s*\(?\d{1,2}:\d{2}(?::\d{2})?\)?\s*[-–—:|]?\s*(.+)$")
 
 
+def is_recent(published):
+    """True when YouTube's relative date ("3 weeks ago", "11 months ago") is under a year."""
+    return bool(re.search(r"(second|minute|hour|day|week|month)s? ago", published or ""))
+
+
+def tier(r):
+    """Top = YouTube already talks about it a lot; Rising = small but mostly recent coverage;
+    Under the radar = small and older/sparse coverage."""
+    if r["videos"] >= 15 or r["total_views"] >= 5e6:
+        return "Top"
+    if r["recent_share"] >= 50:
+        return "Rising"
+    return "Under the radar"
+
+
 def main():
     videos = json.loads(DATA.read_text())
     stats = defaultdict(lambda: {"videos": set(), "views": 0, "chapter_videos": set(), "ugly": 0,
                                  "passive": 0, "effort": 0, "local_ugly": 0, "local_passive": 0,
-                                 "top": []})
+                                 "recent": 0, "top": []})
     for v in videos:
         desc = v.get("description", "")
         title = v["title"]
@@ -139,12 +154,13 @@ def main():
             s["local_ugly"] += any(UGLY_RE.search(u) for u in hit_lines)
             s["local_passive"] += any(PASSIVE_RE.search(u) for u in hit_lines)
             s["effort"] += any(EFFORT_RE.search(u) for u in hit_lines)
+            s["recent"] += is_recent(v.get("published", ""))
             s["top"].append((v["views"], title, v["video_id"]))
 
     rows = []
     for h, s in stats.items():
         n = len(s["videos"])
-        if n < 3:
+        if n < 1:
             continue
         ugly = 0.6 * s["ugly"] / n + 0.4 * s["local_ugly"] / n
         passive = 0.6 * s["passive"] / n + 0.4 * s["local_passive"] / n - 0.3 * s["effort"] / n
@@ -155,12 +171,17 @@ def main():
             "unattractive_score": round(100 * ugly, 1),
             "passive_score": round(100 * max(passive, 0), 1),
             "popularity": round(math.log10(1 + s["views"]) * math.sqrt(n), 1),
+            "recent_share": round(100 * s["recent"] / n),
             "top_videos": " | ".join(f"{t} (https://youtu.be/{i}, {vw:,} views)" for vw, t, i in top),
         })
     # Combined: sweet spot of boring AND passive, weighted by how much YouTube talks about it.
     for r in rows:
         r["boring_passive_score"] = round(
             (r["unattractive_score"] * r["passive_score"]) ** 0.5 * (1 + math.log10(r["videos"])), 1)
+        # Opportunity ignores reach: how boring+passive it is, discounted when the niche is crowded.
+        r["opportunity_score"] = round(
+            (r["unattractive_score"] * r["passive_score"]) ** 0.5 / (1 + 0.15 * math.log10(1 + r["total_views"] / 1e5)), 1)
+        r["tier"] = tier(r)
     rows.sort(key=lambda r: r["boring_passive_score"], reverse=True)
 
     out = HERE / "data" / "hustle_rankings.csv"

@@ -1,6 +1,6 @@
 # YouTube scrape: least attractive and most passive side hustles
 
-**Data:** 478 unique YouTube videos (~200M combined views) from 22 searches, split into two groups: *unattractive* ("boring businesses", "unsexy side hustles", "dirty jobs side hustle", "gross side hustles that pay well", …) and *passive* ("most passive side hustles", "hands off side hustles", "lazy side hustles", "set and forget", …). Each video's title, full description and chapter list (262 videos had chapters) were matched against a lexicon of about 75 side hustles. Full table: [`data/hustle_rankings.csv`](data/hustle_rankings.csv).
+**Data:** 478 unique YouTube videos (~156M combined views) from 22 searches, split into two groups: *unattractive* ("boring businesses", "unsexy side hustles", "dirty jobs side hustle", "gross side hustles that pay well", …) and *passive* ("most passive side hustles", "hands off side hustles", "lazy side hustles", "set and forget", …). Each video's title, full description and chapter list (262 videos had chapters) were matched against a lexicon of about 75 side hustles. Full table: [`data/hustle_rankings.csv`](data/hustle_rankings.csv).
 
 **Scores (0–100):**
 - **Unattractive**: share of the videos mentioning a hustle that frame it as boring, dirty, gross or unsexy, plus how often those words appear on the same line as the hustle.
@@ -78,3 +78,6 @@ The most passive ideas are mostly **digital or financial**. They are also the *m
 python3 side_hustles/scrape_youtube.py   # ~3 min → data/videos.json
 python3 side_hustles/analyze.py          # → data/hustle_rankings.csv
 ```
+
+## Live ledger
+`ledger.html` is published as a private claude.ai artifact (“Boring Money Ledger”). It shows every hustle split into **Top** (15+ videos or 5M+ views), **Rising** (little coverage, mostly from the last year) and **Under the radar** (little coverage, mostly older). You can star hustles, set a status, rate them, keep notes and add your own. Scan data lives in the artifact's database. After rerunning the scraper and analyzer, ask Claude to refresh it. Refreshing keeps your statuses and notes and adds a new entry to each hustle's scan history.
