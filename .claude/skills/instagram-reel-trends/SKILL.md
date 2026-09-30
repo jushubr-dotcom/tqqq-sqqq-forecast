@@ -34,10 +34,18 @@ the API or copy-paste prompts by hand.
 
 ## Setup check
 
+`$SKILL_DIR` below means the folder containing this SKILL.md. Set it first in
+each shell command, using whichever exists:
+
+```bash
+SKILL_DIR="$HOME/.claude/skills/instagram-reel-trends"   # personal install (any project)
+SKILL_DIR=".claude/skills/instagram-reel-trends"         # installed inside a project
+```
+
 Run once and install whatever is missing:
 
 ```bash
-python3 .claude/skills/instagram-reel-trends/scripts/check_setup.py
+python3 "$SKILL_DIR"/scripts/check_setup.py
 ```
 
 Needs: `ffmpeg`/`ffprobe` (frame extraction), Python `requests` and `Pillow`,
@@ -48,7 +56,7 @@ needed for the optional API route.
 ## Stage 1 — Discover trending posts
 
 ```bash
-python3 .claude/skills/instagram-reel-trends/scripts/fetch_trending.py \
+python3 "$SKILL_DIR"/scripts/fetch_trending.py \
   --hashtags fitness,gymtok,morningroutine --limit 50 --out ig_runs/<run>/trending.json
 # optional: benchmark specific public business/creator accounts
   --accounts nike,redbull
@@ -86,7 +94,7 @@ Preferred: the user drops `.mp4` files into `ig_runs/<run>/reels/`.
 Otherwise, for URLs the user has rights to analyze:
 
 ```bash
-bash .claude/skills/instagram-reel-trends/scripts/download_reels.sh ig_runs/<run>/reels urls.txt
+bash "$SKILL_DIR"/scripts/download_reels.sh ig_runs/<run>/reels urls.txt
 ```
 
 (If Instagram requires login, ask the user to supply the files instead —
@@ -95,7 +103,7 @@ don't handle their Instagram password.)
 ## Stage 3 — Analyze Reels
 
 ```bash
-python3 .claude/skills/instagram-reel-trends/scripts/extract_frames.py \
+python3 "$SKILL_DIR"/scripts/extract_frames.py \
   ig_runs/<run>/reels --out ig_runs/<run>/frames --scene 0.30 --max-frames 12
 ```
 
@@ -171,7 +179,7 @@ ask for or type their ChatGPT password.
   ```
 
   ```bash
-  python3 .claude/skills/instagram-reel-trends/scripts/chatgpt_browser.py \
+  python3 "$SKILL_DIR"/scripts/chatgpt_browser.py \
     ig_runs/<run>/prompts.json --out ig_runs/<run>/regen --cdp http://localhost:9222
   ```
 
@@ -190,7 +198,7 @@ ask for or type their ChatGPT password.
 **B. API (automated, needs a key)** — requires `OPENAI_API_KEY`:
 
 ```bash
-python3 .claude/skills/instagram-reel-trends/scripts/regenerate_frames.py \
+python3 "$SKILL_DIR"/scripts/regenerate_frames.py \
   ig_runs/<run>/prompts.json --out ig_runs/<run>/regen --model gpt-image-1 --quality medium
 ```
 
@@ -208,7 +216,7 @@ revised prompt for any frame worth re-running. Optionally stitch outputs into a
 storyboard:
 
 ```bash
-python3 .claude/skills/instagram-reel-trends/scripts/extract_frames.py --sheet ig_runs/<run>/regen
+python3 "$SKILL_DIR"/scripts/extract_frames.py --sheet ig_runs/<run>/regen
 ```
 
 ## Deliverables to hand back
