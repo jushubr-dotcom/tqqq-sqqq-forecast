@@ -12,11 +12,12 @@ End-to-end workflow in four stages. Each stage writes to a run folder
 1. Discover  → trending.json          (scripts/fetch_trending.py)
 2. Collect   → reels/*.mp4            (user files, or scripts/download_reels.sh)
 3. Analyze   → frames/, analysis.md   (scripts/extract_frames.py + your vision)
-4. Regenerate→ prompts.json, regen/   (scripts/regenerate_frames.py, or ChatGPT by hand)
+4. Regenerate→ prompts.json, regen/   (ChatGPT in Chrome: scripts/chatgpt_browser.py; or API / by hand)
 ```
 
 Ask the user only for what's missing: hashtags/niche, the Reels (URLs or files),
-and whether they want API regeneration or copy-paste prompts for the ChatGPT app.
+and whether ChatGPT in their Chrome is fine (the default) or they'd rather use
+the API or copy-paste prompts by hand.
 
 ## Ground rules
 
@@ -40,8 +41,9 @@ python3 .claude/skills/instagram-reel-trends/scripts/check_setup.py
 ```
 
 Needs: `ffmpeg`/`ffprobe` (frame extraction), Python `requests` and `Pillow`,
-optionally `yt-dlp` (downloads). Env vars: `IG_ACCESS_TOKEN`, `IG_USER_ID`
-(discovery), `OPENAI_API_KEY` (API regeneration).
+Google Chrome + `playwright` (ChatGPT in Chrome), optionally `yt-dlp` (downloads).
+Env vars: `IG_ACCESS_TOKEN`, `IG_USER_ID` (discovery). `OPENAI_API_KEY` is only
+needed for the optional API route.
 
 ## Stage 1 — Discover trending posts
 
@@ -147,9 +149,45 @@ Prompt-writing rules:
   transfer). `mode: "generate"` is text-only — use it when the frame contains a
   recognizable person or brand you must not carry over.
 
-Then pick a path:
+Then pick a path. **Default to A** (ChatGPT in the user's Chrome, no API key).
 
-**A. API (automated)** — requires `OPENAI_API_KEY`:
+**A. ChatGPT in Chrome (default, no API key)** — uses the user's own logged-in
+ChatGPT session in a visible Chrome window. The user logs in themselves; never
+ask for or type their ChatGPT password.
+
+- *If browser-control tools are available in this session* (e.g. Claude in
+  Chrome `mcp__claude-in-chrome__*` tools): open https://chatgpt.com/ in a new
+  chat, send the style setup message from `chatgpt_pack.md` (generate it with
+  path C's command), then for each frame upload `source_frame`, paste its prompt,
+  wait for the image to finish, and save it to `regen/<id>.png`. Screenshot
+  after each image to confirm it finished.
+- *Otherwise* run the Playwright script against the user's Chrome. Have the user
+  start Chrome with remote debugging and a dedicated profile (Chrome refuses
+  remote debugging on the default profile), then log in to chatgpt.com there once:
+
+  ```bash
+  # macOS: "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" ...
+  google-chrome --remote-debugging-port=9222 --user-data-dir="$HOME/.chatgpt-chrome"
+  ```
+
+  ```bash
+  python3 .claude/skills/instagram-reel-trends/scripts/chatgpt_browser.py \
+    ig_runs/<run>/prompts.json --out ig_runs/<run>/regen --cdp http://localhost:9222
+  ```
+
+  Or `--profile ~/.chatgpt-chrome` instead of `--cdp` to let the script launch
+  Chrome itself (it waits for the user to log in on first run). Useful flags:
+  `--base-url <ChatGPT project URL>` to keep the chat in a project, `--only id1,id2`
+  to re-run frames, `--pause` (default 8 s) between frames, `--timeout` per image.
+  Images are saved as `regen/<id>.png|.jpg`, and `regen/manifest.json` records the chat URL.
+
+  Keep runs modest (tens of frames, not hundreds). ChatGPT has image usage
+  limits, and OpenAI's terms restrict automated use of the web app. Tell the user
+  this once and let them choose; for large batches recommend path B.
+  If a step times out, the chatgpt.com UI has probably changed: take a screenshot,
+  inspect the page, and update the selector constants at the top of the script.
+
+**B. API (automated, needs a key)** — requires `OPENAI_API_KEY`:
 
 ```bash
 python3 .claude/skills/instagram-reel-trends/scripts/regenerate_frames.py \
@@ -159,7 +197,7 @@ python3 .claude/skills/instagram-reel-trends/scripts/regenerate_frames.py \
 Add `--dry-run` first to validate the file and estimate the image count.
 Outputs `regen/<id>.png` plus `regen/manifest.json`.
 
-**B. ChatGPT app (manual)** — run the same script with `--chatgpt-pack`. It writes
+**C. ChatGPT by hand** — run the same script with `--chatgpt-pack`. It writes
 `regen/chatgpt_pack.md`: numbered, copy-paste-ready messages, each naming the
 frame file to attach. Tell the user to open a new ChatGPT chat, send the style
 block message first, then each frame message with its image attached.

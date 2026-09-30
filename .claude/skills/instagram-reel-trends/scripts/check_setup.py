@@ -8,11 +8,13 @@ CHECKS = [
     ("binary", "ffmpeg", "frame extraction (apt install ffmpeg / brew install ffmpeg)"),
     ("binary", "ffprobe", "video metadata (ships with ffmpeg)"),
     ("binary", "yt-dlp", "optional: download Reels (pip install yt-dlp)"),
+    ("binary", "google-chrome", "ChatGPT-in-Chrome route (or Chrome.app on macOS)"),
+    ("module", "playwright", "ChatGPT-in-Chrome route (pip install playwright)"),
     ("module", "requests", "API calls (pip install requests)"),
     ("module", "PIL", "contact sheets (pip install Pillow)"),
     ("env", "IG_ACCESS_TOKEN", "Stage 1 discovery via Instagram Graph API"),
     ("env", "IG_USER_ID", "Stage 1: your IG Business/Creator account id"),
-    ("env", "OPENAI_API_KEY", "Stage 4 API regeneration (not needed for --chatgpt-pack)"),
+    ("env", "OPENAI_API_KEY", "optional: Stage 4 API route (not needed for ChatGPT in Chrome)"),
 ]
 
 

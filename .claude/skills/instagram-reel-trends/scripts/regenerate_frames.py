@@ -16,6 +16,12 @@ import sys
 
 API = "https://api.openai.com/v1/images"
 SIZES = {"1024x1024", "1024x1536", "1536x1024", "auto"}
+STYLE_SETUP = (
+    "I'm going to send you reference frames from a vertical short-form video. For each one,\n"
+    "create a NEW 9:16 image that keeps the composition, camera angle, lighting and color mood\n"
+    "of the reference, but uses the subject I describe. Don't copy any people, faces, logos,\n"
+    "text or watermarks from the reference. Keep all images visually consistent as one sequence."
+)
 
 
 def load(path):
@@ -60,10 +66,7 @@ def chatgpt_pack(items, out):
         "",
         "## 0. Style setup",
         "```",
-        "I'm going to send you reference frames from a vertical short-form video. For each one,",
-        "create a NEW 9:16 image that keeps the composition, camera angle, lighting and color mood",
-        "of the reference, but uses the subject I describe. Don't copy any people, faces, logos,",
-        "text or watermarks from the reference. Keep all images visually consistent as one sequence.",
+        STYLE_SETUP,
         "```",
         "",
     ]
