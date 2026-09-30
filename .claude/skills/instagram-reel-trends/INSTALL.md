@@ -8,7 +8,7 @@ so it works in every project and can drive your own Chrome.
 macOS / Linux:
 
 ```bash
-git clone --depth 1 -b claude/exciting-goodall-810v9g \
+git clone --depth 1 -b main \
   https://github.com/jushubr-dotcom/tqqq-sqqq-forecast.git /tmp/ig-skill
 mkdir -p ~/.claude/skills
 cp -R /tmp/ig-skill/.claude/skills/instagram-reel-trends ~/.claude/skills/
@@ -18,14 +18,13 @@ rm -rf /tmp/ig-skill
 Windows (PowerShell):
 
 ```powershell
-git clone --depth 1 -b claude/exciting-goodall-810v9g `
+git clone --depth 1 -b main `
   https://github.com/jushubr-dotcom/tqqq-sqqq-forecast.git $env:TEMP\ig-skill
 New-Item -ItemType Directory -Force "$HOME\.claude\skills" | Out-Null
 Copy-Item -Recurse "$env:TEMP\ig-skill\.claude\skills\instagram-reel-trends" "$HOME\.claude\skills\"
 Remove-Item -Recurse -Force "$env:TEMP\ig-skill"
 ```
 
-(After the branch is merged, use `-b main` instead.)
 
 ## 2. Install the tools
 
