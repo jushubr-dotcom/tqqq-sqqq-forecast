@@ -84,3 +84,38 @@ test('pickPair prefers native audio language and a viewer-language track', () =>
   r = S.pickPair(tracks, { originalLang: 'en', myLang: 'en' });
   assert.equal(r.mine, null, 'same language => single line');
 });
+
+test('parseM3u8Master lists subtitle renditions once and flags forced/SDH/original audio', () => {
+  const master = [
+    '#EXTM3U',
+    '#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="aac",NAME="English [Original]",LANGUAGE="en",DEFAULT=YES,URI="a/en.m3u8"',
+    '#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="aac",NAME="Español",LANGUAGE="es",URI="a/es.m3u8"',
+    '#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="sub",NAME="English [CC]",LANGUAGE="en",CHARACTERISTICS="public.accessibility.transcribes-spoken-dialog,public.accessibility.describes-music-and-sound",URI="r/en_sdh.m3u8"',
+    '#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="sub",NAME="English",LANGUAGE="en",FORCED=NO,URI="r/en.m3u8"',
+    '#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="sub",NAME="Español",LANGUAGE="es-419",FORCED=YES,URI="r/es_forced.m3u8"',
+    '#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="sub2",NAME="English",LANGUAGE="en",FORCED=NO,URI="r/en.m3u8"',
+    '#EXT-X-STREAM-INF:BANDWIDTH=1,SUBTITLES="sub"',
+    'v/1.m3u8',
+  ].join('\n');
+  const { subtitles, audio } = S.parseM3u8Master(master, 'https://cdn.example/ps01/master.m3u8?x=1');
+  assert.equal(subtitles.length, 3);
+  assert.deepEqual(subtitles[0], {
+    lang: 'en', label: 'English [CC]', url: 'https://cdn.example/ps01/r/en_sdh.m3u8', forced: false, sdh: true,
+  });
+  assert.equal(subtitles[2].forced, true);
+  assert.equal(audio.find((a) => a.original).lang, 'en');
+  const pair = S.pickPair(subtitles, { originalLang: 'en', myLang: 'es' });
+  assert.equal(pair.orig.url, 'https://cdn.example/ps01/r/en.m3u8');
+  assert.equal(pair.mine, null, 'only a forced Spanish track => machine translation');
+});
+
+test('parseM3u8Media + mergeCues join WebVTT segments without duplicates', () => {
+  const media = '#EXTM3U\n#EXT-X-TARGETDURATION:6\n#EXTINF:6.0,\nseg0.vtt\n#EXTINF:6.0,\nhttps://other.example/seg1.vtt\n#EXT-X-ENDLIST\n';
+  assert.deepEqual(S.parseM3u8Media(media, 'https://cdn.example/r/en.m3u8'), [
+    'https://cdn.example/r/seg0.vtt',
+    'https://other.example/seg1.vtt',
+  ]);
+  const a = S.parseVtt('WEBVTT\nX-TIMESTAMP-MAP=MPEGTS:900000,LOCAL:00:00:00.000\n\n00:00:01.000 --> 00:00:07.000\nspans\n\n00:00:02.000 --> 00:00:03.000\nfirst');
+  const b = S.parseVtt('WEBVTT\n\n00:00:01.000 --> 00:00:07.000\nspans\n\n00:00:08.000 --> 00:00:09.000\nsecond');
+  assert.deepEqual(S.mergeCues([b, a]).map((c) => c.text), ['spans', 'first', 'second']);
+});

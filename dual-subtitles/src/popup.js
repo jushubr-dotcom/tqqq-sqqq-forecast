@@ -33,19 +33,59 @@
   });
 
   // ---------- what's happening on the current tab ----------
+  let tabId = null;
+
+  function describe(st) {
+    const t = $('now-text');
+    $('now').hidden = false;
+    if (st.status === 'ready' || st.status === 'live') {
+      const from = st.status === 'live' ? ' (from audio)' : '';
+      const parts = [st.site + ': ' + (st.orig.lang ? nameOf(st.orig.lang) : 'detecting language…') + from];
+      if (st.mine) parts.push(nameOf(st.mine.lang) + (st.mine.machine ? ' (machine translated' + (st.translating ? ', in progress' : '') + ')' : ''));
+      t.textContent = parts.join(' + ');
+    } else if (st.status === 'loading') t.textContent = st.site + ': loading subtitles…';
+    else if (st.status === 'error') t.textContent = st.site + ': ' + st.error + ' Try "Listen to this tab".';
+    else if (!st.supported) t.textContent = st.site + ': no built-in subtitle support here. Use "Listen to this tab".';
+    else t.textContent = st.site + ': start a video to see dual subtitles.';
+  }
+
+  function showListen(l) {
+    const mine = l && l.tabId === tabId;
+    const active = mine && (l.status === 'loading' || l.status === 'listening');
+    $('listen').textContent = active ? 'Stop listening' : 'Listen to this tab';
+    $('listen').dataset.active = active ? '1' : '';
+    const text = $('audio-text');
+    if (mine && l.status === 'loading') text.textContent = l.detail || 'Loading speech model…';
+    else if (mine && l.status === 'listening') text.textContent = 'Listening. Lines appear a moment after they are spoken.';
+    else if (mine && l.status === 'error') text.textContent = l.detail || 'Something went wrong.';
+    else text.textContent = 'Generate subtitles from whatever is playing in this tab, on any site.';
+  }
+
+  function refresh() {
+    if (tabId == null) return;
+    chrome.tabs.sendMessage(tabId, { type: 'status' }, (st) => {
+      if (chrome.runtime.lastError || !st) return;
+      describe(st);
+    });
+    chrome.runtime.sendMessage({ type: 'getListen' }).then(showListen).catch(() => {});
+  }
+
+  $('listen').onclick = async () => {
+    $('listen').disabled = true;
+    const res = await chrome.runtime.sendMessage({ type: $('listen').dataset.active ? 'stopListening' : 'startListening', tabId });
+    $('listen').disabled = false;
+    if (res && res.error) {
+      $('audio-text').textContent = /not been invoked|cannot be captured|chrome:\/\//i.test(res.error)
+        ? "This page can't be captured. Open the video's tab, click the extension icon there and try again."
+        : 'Could not start: ' + res.error;
+    }
+    refresh();
+  };
+
   chrome.tabs.query({ active: true, currentWindow: true }, ([tab]) => {
     if (!tab) return;
-    chrome.tabs.sendMessage(tab.id, { type: 'status' }, (st) => {
-      if (chrome.runtime.lastError || !st) return;
-      $('now').hidden = false;
-      const t = $('now-text');
-      if (st.status === 'ready') {
-        const parts = [st.site + ': ' + nameOf(st.orig.lang)];
-        if (st.mine) parts.push(nameOf(st.mine.lang) + (st.mine.machine ? ' (machine translated' + (st.translating ? ', in progress' : '') + ')' : ''));
-        t.textContent = parts.join(' + ');
-      } else if (st.status === 'loading') t.textContent = st.site + ': loading subtitles…';
-      else if (st.status === 'error') t.textContent = st.site + ': ' + st.error;
-      else t.textContent = st.site + ': start a video to see dual subtitles.';
-    });
+    tabId = tab.id;
+    refresh();
+    setInterval(refresh, 1000);
   });
 })();

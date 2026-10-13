@@ -155,6 +155,72 @@
     return !!a && !!b && baseLang(a) === baseLang(b);
   }
 
+  // ---------- HLS (Disney+) ----------
+  function m3u8Attrs(line) {
+    const out = {};
+    const re = /([A-Z0-9-]+)=("([^"]*)"|[^,]*)/g;
+    let m;
+    while ((m = re.exec(line))) out[m[1]] = m[3] !== undefined ? m[3] : m[2];
+    return out;
+  }
+
+  function resolveUrl(uri, base) {
+    try {
+      return new URL(uri, base).href;
+    } catch (e) {
+      return uri;
+    }
+  }
+
+  // Subtitle and audio renditions from a master playlist.
+  function parseM3u8Master(text, baseUrl) {
+    const subtitles = [];
+    const audio = [];
+    for (const line of text.split(/\r?\n/)) {
+      if (!line.startsWith('#EXT-X-MEDIA:')) continue;
+      const a = m3u8Attrs(line.slice(13));
+      if (a.TYPE === 'SUBTITLES' && a.URI) {
+        subtitles.push({
+          lang: a.LANGUAGE || '',
+          label: a.NAME || a.LANGUAGE || '',
+          url: resolveUrl(a.URI, baseUrl),
+          forced: a.FORCED === 'YES' || /forced/i.test(a.NAME || ''),
+          sdh: /describes-music-and-sound/.test(a.CHARACTERISTICS || '') || /\[cc\]|sdh/i.test(a.NAME || ''),
+        });
+      } else if (a.TYPE === 'AUDIO') {
+        audio.push({ lang: a.LANGUAGE || '', label: a.NAME || '', original: /original/i.test(a.NAME || '') });
+      }
+    }
+    // The same rendition is often listed once per audio group; keep one of each.
+    const seen = new Set();
+    return {
+      subtitles: subtitles.filter((t) => !seen.has(t.url) && seen.add(t.url)),
+      audio,
+    };
+  }
+
+  // Segment URLs from a media playlist.
+  function parseM3u8Media(text, baseUrl) {
+    return text
+      .split(/\r?\n/)
+      .map((l) => l.trim())
+      .filter((l) => l && !l.startsWith('#'))
+      .map((l) => resolveUrl(l, baseUrl));
+  }
+
+  // Join cues from several files, dropping repeats of cues that span segment boundaries.
+  function mergeCues(lists) {
+    const seen = new Set();
+    const out = [];
+    for (const c of [].concat(...lists).sort((a, b) => a.start - b.start)) {
+      const key = c.start.toFixed(2) + '|' + c.text;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(c);
+    }
+    return out;
+  }
+
   // Choose the original-language track and the viewer's-language track from a
   // site's track list. Returns { orig, mine } where mine may be null (=> machine translate).
   function pickPair(tracks, { originalLang, myLang, origOverride } = {}) {
@@ -172,7 +238,7 @@
     return { orig, mine };
   }
 
-  const api = { pickPair, parseJson3, parseVtt, parseTtml, parseAny, cueAt, baseLang, sameLang, decodeEntities };
+  const api = { pickPair, parseM3u8Master, parseM3u8Media, mergeCues, parseJson3, parseVtt, parseTtml, parseAny, cueAt, baseLang, sameLang, decodeEntities };
   if (typeof module === 'object' && module.exports) module.exports = api;
   else root.DualSubs = Object.assign(root.DualSubs || {}, api);
 })(typeof globalThis !== 'undefined' ? globalThis : this);

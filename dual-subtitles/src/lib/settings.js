@@ -8,4 +8,5 @@ var DUALSUBS_DEFAULTS = {
   origOnTop: true,
   hideNative: true,
   offset: 0, // seconds; positive shows subtitles later
+  asrModel: 'base', // speech model for subtitles from audio: tiny | base | small
 };

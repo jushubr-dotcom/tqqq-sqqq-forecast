@@ -20,6 +20,15 @@
     <div id="now-text"></div>
   </section>
 
+  <section id="audio" class="card">
+    <div class="label">Subtitles from audio</div>
+    <div id="audio-text">Generate subtitles from whatever is playing in this tab, on any site.</div>
+    <div class="row">
+      <button id="listen">Listen to this tab</button>
+      <span class="hint">or press <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd></span>
+    </div>
+  </section>
+
   <section class="settings">
     <label>My language
       <select id="myLang"></select>
@@ -36,11 +45,18 @@
     <label>Timing offset <span id="offset-val"></span>
       <input type="range" id="offset" min="-5" max="5" step="0.25">
     </label>
+    <label>Speech recognition
+      <select id="asrModel">
+        <option value="tiny">Fast (smallest download)</option>
+        <option value="base">Balanced</option>
+        <option value="small">Accurate (largest download, needs a fast computer)</option>
+      </select>
+    </label>
     <label class="check"><input type="checkbox" id="origOnTop"> Original language on top</label>
     <label class="check"><input type="checkbox" id="hideNative"> Hide the site's own subtitles</label>
   </section>
 
-  <footer>Works on YouTube, Netflix and Prime Video.</footer>
+  <footer>Site subtitles on YouTube, Netflix, Prime Video and Disney+. Audio subtitles work on any site.</footer>
   <script src="lib/settings.js"></script>
   <script src="lib/languages.js"></script>
   <script src="popup.js"></script>

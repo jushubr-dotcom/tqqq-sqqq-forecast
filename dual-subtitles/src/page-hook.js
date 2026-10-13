@@ -11,6 +11,7 @@
   const isYouTube = /(^|\.)youtube\.com$/.test(host);
   const isNetflix = /(^|\.)netflix\.com$/.test(host);
   const isPrime = /(^|\.)(primevideo|amazon)\.[a-z.]+$/.test(host);
+  const isDisney = /(^|\.)disneyplus\.com$/.test(host);
 
   // The content script loads at document_idle, after players may already have fetched
   // their metadata, so keep recent messages and replay them when it asks.
@@ -28,23 +29,6 @@
     post(type, payload);
   }
 
-  // ---------- URL watching (fetch + XHR) ----------
-  function onRequest(url) {
-    if (!url) return;
-    if (isYouTube && url.includes('/api/timedtext')) emit('yt-timedtext-url', absolute(url));
-  }
-
-  function onJsonResponse(url, text) {
-    if (isPrime && /GetPlaybackResources|GetVodPlaybackResources|playback\/prs/i.test(url)) {
-      try {
-        const subs = extractPrimeSubs(JSON.parse(text));
-        if (subs) emit('prime-subs', subs);
-      } catch (e) {
-        /* not JSON */
-      }
-    }
-  }
-
   function absolute(url) {
     try {
       return new URL(url, location.href).href;
@@ -53,30 +37,76 @@
     }
   }
 
+  // ---------- request / response watching (fetch + XHR) ----------
+  function onRequest(url) {
+    if (isYouTube && url.includes('/api/timedtext')) emit('yt-timedtext-url', absolute(url));
+  }
+
+  // Which responses we want to read. Returns a handler for the body text, or null.
+  function responseHandler(url) {
+    if (isPrime && /PlaybackResources|playback\/prs/i.test(url)) {
+      return (text) => {
+        const subs = extractPrimeSubs(JSON.parse(text));
+        if (subs) emit('prime-subs', subs);
+      };
+    }
+    if (isNetflix && /manifest|licensedManifest|pbo_manifests|playapi/i.test(url)) {
+      return (text) => {
+        const json = JSON.parse(text);
+        const result = json && (json.result || json);
+        if (result && Array.isArray(result.timedtexttracks) && result.movieId) emit('netflix-manifest', extractNetflixSubs(result));
+      };
+    }
+    if (isDisney && /\.m3u8(\?|$)/i.test(url)) {
+      return (text) => {
+        // Only master playlists list subtitle renditions.
+        if (text.startsWith('#EXTM3U') && /TYPE=SUBTITLES/.test(text)) emit('hls-master', { url: absolute(url), text });
+      };
+    }
+    if (isDisney && /bamgrid|disneyplus|dssott/i.test(url)) {
+      return (text) => {
+        const m = text.length < 3e6 && text.match(/"originalLanguage"\s*:\s*"([A-Za-z-]+)"/);
+        if (m) emit('disney-original-lang', m[1]);
+      };
+    }
+    return null;
+  }
+
+  function safely(fn, text) {
+    try {
+      fn(text);
+    } catch (e) {
+      /* not the shape we expected */
+    }
+  }
+
   const origFetch = window.fetch;
   window.fetch = function (input, init) {
-    const url = typeof input === 'string' ? input : input && input.url;
+    const url = absolute(typeof input === 'string' ? input : (input && input.url) || String(input));
     onRequest(url);
     const p = origFetch.apply(this, arguments);
-    if (isPrime && url && /PlaybackResources|playback\/prs/i.test(url)) {
-      p.then((res) => res.clone().text().then((t) => onJsonResponse(url, t))).catch(() => {});
-    }
+    const handler = responseHandler(url);
+    if (handler) p.then((res) => res.clone().text().then((t) => safely(handler, t))).catch(() => {});
     return p;
   };
 
   const origOpen = XMLHttpRequest.prototype.open;
   XMLHttpRequest.prototype.open = function (method, url) {
-    this.__dualSubsUrl = String(url);
-    onRequest(this.__dualSubsUrl);
-    if (isPrime) {
+    const abs = absolute(String(url));
+    onRequest(abs);
+    const handler = responseHandler(abs);
+    if (handler) {
       this.addEventListener('load', () => {
-        if (!/PlaybackResources|playback\/prs/i.test(this.__dualSubsUrl)) return;
+        let text = null;
         try {
-          const body = this.responseType === 'json' ? JSON.stringify(this.response) : this.responseText;
-          onJsonResponse(this.__dualSubsUrl, body);
+          const r = this.response;
+          if (this.responseType === '' || this.responseType === 'text') text = this.responseText;
+          else if (this.responseType === 'json') text = JSON.stringify(r);
+          else if (r instanceof ArrayBuffer) text = new TextDecoder().decode(r);
         } catch (e) {
-          /* unreadable response type */
+          /* unreadable */
         }
+        if (text) safely(handler, text);
       });
     }
     return origOpen.apply(this, arguments);
@@ -176,7 +206,7 @@
         pr = window.ytInitialPlayerResponse;
       }
       const r = pr && pr.captions && pr.captions.playerCaptionsTracklistRenderer;
-      emit('yt-tracks', {
+      post('yt-tracks', {
         videoId: pr && pr.videoDetails ? pr.videoDetails.videoId : null,
         tracks: r
           ? (r.captionTracks || []).map((t) => ({

@@ -35,6 +35,21 @@ h1 { flex: 1; margin: 0; font-size: 16px; }
 .card { padding: 10px 12px; margin-bottom: 12px; border-radius: 8px; background: var(--card); }
 .card .label { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .04em; }
 
+.row { display: flex; align-items: center; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+.hint { color: var(--muted); font-size: 11px; }
+kbd { padding: 0 4px; border: 1px solid var(--border); border-radius: 3px; font: 11px ui-monospace, monospace; }
+
+button {
+  padding: 7px 12px;
+  border: 0;
+  border-radius: 6px;
+  background: var(--accent);
+  color: var(--accent-fg);
+  font: 600 13px system-ui, sans-serif;
+  cursor: pointer;
+}
+button:disabled { opacity: .6; cursor: default; }
+
 .settings label { display: block; margin-bottom: 10px; color: var(--muted); }
 .settings label span { float: right; color: var(--fg); }
 .settings select, .settings input[type=range] { display: block; width: 100%; margin-top: 4px; }
