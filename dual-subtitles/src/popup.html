@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Dual Subtitles</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <header>
+    <img src="icons/icon48.png" alt="" width="28" height="28">
+    <h1>Dual Subtitles</h1>
+    <label class="switch" title="Turn dual subtitles on or off">
+      <input type="checkbox" id="enabled">
+      <span></span>
+    </label>
+  </header>
+
+  <section id="now" class="card" hidden>
+    <div class="label">On this page</div>
+    <div id="now-text"></div>
+  </section>
+
+  <section id="audio" class="card">
+    <div class="label">Subtitles from audio</div>
+    <div id="audio-text">Generate subtitles from whatever is playing in this tab, on any site.</div>
+    <div class="row">
+      <button id="listen">Listen to this tab</button>
+      <span class="hint">or press <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd></span>
+    </div>
+  </section>
+
+  <section class="settings">
+    <label>My language
+      <select id="myLang"></select>
+    </label>
+    <label>Original language
+      <select id="origLang"><option value="auto">Detect automatically</option></select>
+    </label>
+    <label>Text size <span id="fontSize-val"></span>
+      <input type="range" id="fontSize" min="14" max="48" step="1">
+    </label>
+    <label>Distance from bottom <span id="bottom-val"></span>
+      <input type="range" id="bottom" min="0" max="40" step="1">
+    </label>
+    <label>Timing offset <span id="offset-val"></span>
+      <input type="range" id="offset" min="-5" max="5" step="0.25">
+    </label>
+    <label>Speech recognition
+      <select id="asrModel">
+        <option value="tiny">Fast (smallest download)</option>
+        <option value="base">Balanced</option>
+        <option value="small">Accurate (largest download, needs a fast computer)</option>
+      </select>
+    </label>
+    <label class="check"><input type="checkbox" id="origOnTop"> Original language on top</label>
+    <label class="check"><input type="checkbox" id="hideNative"> Hide the site's own subtitles</label>
+  </section>
+
+  <footer>Site subtitles on YouTube, Netflix, Prime Video and Disney+. Audio subtitles work on any site.</footer>
+  <script src="lib/settings.js"></script>
+  <script src="lib/languages.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>

@@ -1,0 +1,5 @@
+dual-subtitles.zip
+node_modules/
+# Downloaded by `npm run vendor`, except the license notice we keep in git.
+src/vendor/transformers/*
+!src/vendor/transformers/onnxruntime.LICENSE
