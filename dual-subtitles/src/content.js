@@ -1,4 +1,4 @@
-// Orchestrates the active site adapter: checks the subscription, loads both subtitle
+// Orchestrates the active site adapter: loads both subtitle
 // tracks, machine-translates when the site has no track in the viewer's language,
 // and draws the two lines over the video in sync with playback.
 (function () {
@@ -10,11 +10,9 @@
   const DEFAULTS = globalThis.DUALSUBS_DEFAULTS;
 
   let settings = Object.assign({}, DEFAULTS);
-  let license = { active: false, status: 'unknown' };
   let state = { status: 'idle', key: null, orig: null, mine: null, error: null, translating: false };
   let resolving = null;
   let generation = 0;
-  let lockedAt = 0;
 
   // ---------- page hook bridge ----------
   const hookListeners = {};
@@ -56,7 +54,7 @@
   adapter.init(ctx);
   ctx.sendToPage('replay');
 
-  // ---------- settings & license ----------
+  // ---------- settings ----------
   chrome.storage.sync.get(DEFAULTS, (s) => {
     settings = s;
     applyNativeCss();
@@ -70,14 +68,6 @@
     if (reload) state.key = null; // re-resolve on next tick
   });
 
-  async function refreshLicense() {
-    try {
-      license = (await chrome.runtime.sendMessage({ type: 'license' })) || license;
-    } catch (e) {
-      /* extension reloaded; keep last value */
-    }
-  }
-
   chrome.runtime.onMessage.addListener((msg, sender, reply) => {
     if (msg.type === 'status') {
       reply({
@@ -88,29 +78,14 @@
         mine: state.mine && { lang: state.mine.lang, label: state.mine.label, machine: !!state.mine.machine },
         translating: state.translating,
       });
-    } else if (msg.type === 'licenseChanged') {
-      refreshLicense().then(() => (state.key = null));
     }
   });
 
   // ---------- loading ----------
-  async function tick() {
+  function tick() {
     if (!settings.enabled) return;
     const key = adapter.currentKey();
-    if (!key || resolving || !findVideo()) return;
-    if (key === state.key) {
-      // While locked, re-check now and then in case the user just subscribed elsewhere.
-      if (state.status !== 'locked' || Date.now() - lockedAt < 30000) return;
-    }
-
-    await refreshLicense();
-    if (!license.active) {
-      state = { status: 'locked', key, orig: null, mine: null, error: null };
-      lockedAt = Date.now();
-      showPaywall();
-      return;
-    }
-    hidePaywall();
+    if (!key || key === state.key || resolving || !findVideo()) return;
 
     const gen = ++generation;
     state = { status: 'loading', key, orig: null, mine: null, error: null, translating: false };
@@ -171,7 +146,7 @@
   }
 
   // ---------- rendering ----------
-  let overlay, lineTop, lineBottom, paywall;
+  let overlay, lineTop, lineBottom;
   let lastTop = null;
   let lastBottom = null;
 
@@ -225,7 +200,7 @@
       nativeStyle = document.createElement('style');
       (document.head || document.documentElement).appendChild(nativeStyle);
     }
-    const hide = settings.enabled && settings.hideNative && license.active && adapter.nativeCaptionSelector;
+    const hide = settings.enabled && settings.hideNative && adapter.nativeCaptionSelector;
     nativeStyle.textContent = hide ? adapter.nativeCaptionSelector + '{display:none!important}' : '';
   }
 
@@ -253,39 +228,6 @@
     const mineText = m ? m.text : '';
     lastTop = setLine(lineTop, settings.origOnTop ? origText : mineText, lastTop);
     lastBottom = setLine(lineBottom, settings.origOnTop ? mineText : origText, lastBottom);
-  }
-
-  // ---------- paywall toast ----------
-  function showPaywall() {
-    applyNativeCss();
-    if (paywall && paywall.isConnected) return;
-    if (sessionStorage.getItem('dualsubs-paywall-dismissed')) return;
-    paywall = document.createElement('div');
-    paywall.className = 'dualsubs-paywall';
-    const expired = license.status === 'expired';
-    const msg = document.createElement('span');
-    msg.textContent = expired
-      ? 'Dual Subtitles: your free trial has ended. Subscribe to keep seeing two languages at once.'
-      : 'Dual Subtitles: start your free 1-month trial to see subtitles in two languages.';
-    const go = document.createElement('button');
-    go.textContent = expired ? 'Subscribe' : 'Start free trial';
-    go.onclick = () => chrome.runtime.sendMessage({ type: expired ? 'openPayment' : 'openTrial' });
-    const close = document.createElement('button');
-    close.className = 'dualsubs-close';
-    close.textContent = '×';
-    close.setAttribute('aria-label', 'Dismiss');
-    close.onclick = () => {
-      sessionStorage.setItem('dualsubs-paywall-dismissed', '1');
-      hidePaywall();
-    };
-    paywall.append(msg, go, close);
-    (document.fullscreenElement || document.body).appendChild(paywall);
-  }
-
-  function hidePaywall() {
-    if (paywall) paywall.remove();
-    paywall = null;
-    applyNativeCss();
   }
 
   setInterval(tick, 1000);

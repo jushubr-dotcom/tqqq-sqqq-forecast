@@ -46,19 +46,9 @@
     "https://*.cloudfront.net/*",
     "https://*.media-amazon.com/*",
     "https://translate.googleapis.com/*",
-    "https://translation.googleapis.com/*",
-    "https://extensionpay.com/*"
+    "https://translation.googleapis.com/*"
   ],
   "content_scripts": [
-    {
-      "matches": [
-        "https://extensionpay.com/*"
-      ],
-      "js": [
-        "vendor/ExtPay.js"
-      ],
-      "run_at": "document_start"
-    },
     {
       "matches": [
         "https://www.youtube.com/*",

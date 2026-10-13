@@ -1,49 +1,6 @@
-// Service worker: subscription status (ExtensionPay), cross-origin subtitle
-// downloads, and machine translation for sites without a track in the viewer's language.
-importScripts('vendor/ExtPay.js', 'config.js');
-
-const extpay = ExtPay(CONFIG.extensionPayId);
-extpay.startBackground();
-
-const DAY = 24 * 60 * 60 * 1000;
-const TRIAL_MS = CONFIG.trialDays * DAY;
-// If ExtensionPay can't be reached, trust the last good answer for this long.
-const OFFLINE_GRACE_MS = 3 * DAY;
-
-async function getLicense() {
-  try {
-    const user = await extpay.getUser();
-    const now = Date.now();
-    const trialStart = user.trialStartedAt ? new Date(user.trialStartedAt).getTime() : null;
-    const trialEndsAt = trialStart ? trialStart + TRIAL_MS : null;
-    let status = 'none';
-    if (user.paid) status = 'paid';
-    else if (trialEndsAt && now < trialEndsAt) status = 'trial';
-    else if (trialStart || user.paidAt) status = 'expired';
-
-    const license = {
-      status,
-      active: status === 'paid' || status === 'trial',
-      trialEndsAt,
-      email: user.email || null,
-      plan: user.plan || null,
-      checkedAt: now,
-    };
-    await chrome.storage.local.set({ license });
-    return license;
-  } catch (e) {
-    const { license } = await chrome.storage.local.get('license');
-    if (license && Date.now() - license.checkedAt < OFFLINE_GRACE_MS) return Object.assign({}, license, { offline: true });
-    return { status: 'unknown', active: false, offline: true, error: String(e && e.message) };
-  }
-}
-
-async function notifyTabs() {
-  const tabs = await chrome.tabs.query({});
-  for (const tab of tabs) chrome.tabs.sendMessage(tab.id, { type: 'licenseChanged' }).catch(() => {});
-}
-extpay.onPaid.addListener(notifyTabs);
-extpay.onTrialStarted.addListener(notifyTabs);
+// Service worker: cross-origin subtitle downloads and machine translation for
+// sites without a track in the viewer's language.
+importScripts('config.js');
 
 // ---------- translation ----------
 async function translate(texts, source, target) {
@@ -89,10 +46,6 @@ async function translateFree(texts, source, target) {
 // ---------- messages ----------
 chrome.runtime.onMessage.addListener((msg, sender, reply) => {
   const handlers = {
-    license: () => getLicense(),
-    openTrial: () => extpay.openTrialPage(CONFIG.trialDays === 30 ? '1-month' : CONFIG.trialDays + '-day'),
-    openPayment: () => extpay.openPaymentPage(),
-    openLogin: () => extpay.openLoginPage(),
     fetchText: async () => {
       const res = await fetch(msg.url);
       if (!res.ok) throw new Error('HTTP ' + res.status);
