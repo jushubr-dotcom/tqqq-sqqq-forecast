@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Dual Subtitles</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <header>
+    <img src="icons/icon48.png" alt="" width="28" height="28">
+    <h1>Dual Subtitles</h1>
+    <label class="switch" title="Turn dual subtitles on or off">
+      <input type="checkbox" id="enabled">
+      <span></span>
+    </label>
+  </header>
+
+  <section id="account" class="card">
+    <div id="account-text">Checking your subscription…</div>
+    <div class="actions">
+      <button id="trial" hidden>Start 1-month free trial</button>
+      <button id="pay" hidden>Subscribe</button>
+      <button id="manage" class="link" hidden>Manage subscription</button>
+      <button id="login" class="link" hidden>Already paid? Log in</button>
+    </div>
+  </section>
+
+  <section id="now" class="card" hidden>
+    <div class="label">On this page</div>
+    <div id="now-text"></div>
+  </section>
+
+  <section class="settings">
+    <label>My language
+      <select id="myLang"></select>
+    </label>
+    <label>Original language
+      <select id="origLang"><option value="auto">Detect automatically</option></select>
+    </label>
+    <label>Text size <span id="fontSize-val"></span>
+      <input type="range" id="fontSize" min="14" max="48" step="1">
+    </label>
+    <label>Distance from bottom <span id="bottom-val"></span>
+      <input type="range" id="bottom" min="0" max="40" step="1">
+    </label>
+    <label>Timing offset <span id="offset-val"></span>
+      <input type="range" id="offset" min="-5" max="5" step="0.25">
+    </label>
+    <label class="check"><input type="checkbox" id="origOnTop"> Original language on top</label>
+    <label class="check"><input type="checkbox" id="hideNative"> Hide the site's own subtitles</label>
+  </section>
+
+  <footer>Works on YouTube, Netflix and Prime Video.</footer>
+  <script src="lib/settings.js"></script>
+  <script src="lib/languages.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>

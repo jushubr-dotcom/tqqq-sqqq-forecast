@@ -1,0 +1,10 @@
+{
+  "name": "dual-subtitles",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Browser extension that shows subtitles in two languages at once on YouTube, Netflix and Prime Video.",
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "zip": "cd src && zip -r ../dual-subtitles.zip . -x '*.DS_Store'"
+  }
+}
